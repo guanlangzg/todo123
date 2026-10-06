@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 656 320" width="656" height="320">
+  <!-- empty_records — 空态：未刻度的尺。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <rect id="bg" x="0" y="0" width="656" height="320" fill="#EFE8DB"/>
+
+  <!-- 层 1：顶带 -->
+  <rect id="band" x="0" y="0" width="656" height="60" fill="#1F6B63"/>
+
+  <!-- 图形组整体上移，使深色轮廓全部收在 y<128（底部 96dp 文字安全区上方） -->
+  <g transform="translate(0,-14)">
+  <!-- 层 2：尺身（未刻度） -->
+  <rect x="56" y="66" width="544" height="48" fill="#D8B267" stroke="#192C3B" stroke-width="4"/>
+  <rect x="56" y="114" width="544" height="7" fill="#7A5410" opacity="0.4"/>
+  <circle cx="84" cy="90" r="9" fill="#EFE8DB" stroke="#192C3B" stroke-width="4"/>
+  <path d="M120 66v16M536 98v16" fill="none" stroke="#192C3B" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- 层 3：右端量度托架 -->
+  <path d="M612 66v48M604 66h16M604 114h16" fill="none" stroke="#1F6B63"
+        stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- 层 4：搁在一旁的笔 -->
+  <path d="M96 132 200 118" fill="none" stroke="#1F6B63" stroke-width="9" stroke-linecap="round"/>
+  <path d="M200 118 216 114 208 128Z" fill="#EFE8DB" stroke="#192C3B" stroke-width="3"/>
+  </g>
+
+  <!-- 层 5：地面 -->
+  <rect id="floor" x="0" y="140" width="656" height="180" fill="#F5F0E8"/>
+
+  <!-- 丝网颗粒：只在顶带与留白内 -->
+  <g id="grain" fill="#164F49" opacity="0.4">
+    <circle cx="40" cy="16" r="1.7"/><circle cx="140" cy="38" r="1.7"/><circle cx="240" cy="14" r="1.7"/>
+    <circle cx="340" cy="40" r="1.7"/><circle cx="440" cy="16" r="1.7"/><circle cx="540" cy="38" r="1.7"/>
+    <circle cx="628" cy="16" r="1.7"/>
+  </g>
+  <g fill="#7F8A92" opacity="0.32">
+    <circle cx="24" cy="86" r="1.7"/><circle cx="30" cy="128" r="1.7"/><circle cx="288" cy="132" r="1.7"/>
+    <circle cx="400" cy="134" r="1.7"/><circle cx="500" cy="130" r="1.7"/><circle cx="632" cy="86" r="1.7"/>
+  </g>
+</svg>

@@ -1,0 +1,43 @@
+{
+  "name": "empty_records",
+  "frame": "panel",
+  "canvas": {
+    "widthPx": 656,
+    "heightPx": 320,
+    "dpW": 328,
+    "dpH": 160,
+    "scale": 2
+  },
+  "scrimColor": "#192C3B",
+  "scrimStops": [
+    {
+      "offset": 0.0,
+      "alpha": 0.0
+    },
+    {
+      "offset": 0.2,
+      "alpha": 0.0
+    },
+    {
+      "offset": 0.4,
+      "alpha": 0.86
+    },
+    {
+      "offset": 1.0,
+      "alpha": 0.86
+    }
+  ],
+  "safeText": {
+    "x": 0.0488,
+    "y": 0.4,
+    "w": 0.9024,
+    "h": 0.6
+  },
+  "dominantColors": [
+    "#1F6B63",
+    "#EFE8DB",
+    "#F5F0E8"
+  ],
+  "minContrastOnScrim": 4.5,
+  "provenance": "遮罩档位依据 docs/设计/设计系统.md §7.2/§7.5：面板底部 96dp 为强遮罩区 α0.86，0.20→0.40 为 64px 渐变过渡以避免硬接缝；非第三方素材"
+}

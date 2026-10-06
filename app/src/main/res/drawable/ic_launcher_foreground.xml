@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Placeholder launcher mark: an original geometric motif, to be replaced by the approved art. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#F2E9DC"
+        android:pathData="M34,30h40v8h-40z" />
+    <path
+        android:fillColor="#D96A4A"
+        android:pathData="M34,46h26v8h-26z" />
+    <path
+        android:fillColor="#F2E9DC"
+        android:pathData="M34,62h40v8h-40z" />
+</vector>

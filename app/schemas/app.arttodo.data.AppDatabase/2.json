@@ -1,0 +1,1190 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "86b56e4873edf3cf31496e080627a738",
+    "entities": [
+      {
+        "tableName": "task",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`task_id` TEXT NOT NULL, `kind` INTEGER NOT NULL, `title` TEXT NOT NULL, `note` TEXT NOT NULL, `sort_key` INTEGER NOT NULL, `created_wall_ms` INTEGER NOT NULL, `archived_at_ms` INTEGER, `last_countdown_minutes` INTEGER NOT NULL DEFAULT 25, `art_asset_id` TEXT, PRIMARY KEY(`task_id`), FOREIGN KEY(`art_asset_id`) REFERENCES `art_asset`(`asset_id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+        "fields": [
+          {
+            "fieldPath": "taskId",
+            "columnName": "task_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "note",
+            "columnName": "note",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortKey",
+            "columnName": "sort_key",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdWallMs",
+            "columnName": "created_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "archivedAtMs",
+            "columnName": "archived_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastCountdownMinutes",
+            "columnName": "last_countdown_minutes",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "25"
+          },
+          {
+            "fieldPath": "artAssetId",
+            "columnName": "art_asset_id",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "task_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_task_kind_archived_at_ms_sort_key",
+            "unique": false,
+            "columnNames": [
+              "kind",
+              "archived_at_ms",
+              "sort_key"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_task_kind_archived_at_ms_sort_key` ON `${TABLE_NAME}` (`kind`, `archived_at_ms`, `sort_key`)"
+          },
+          {
+            "name": "index_task_art_asset_id",
+            "unique": false,
+            "columnNames": [
+              "art_asset_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_task_art_asset_id` ON `${TABLE_NAME}` (`art_asset_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "art_asset",
+            "onDelete": "SET NULL",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "art_asset_id"
+            ],
+            "referencedColumns": [
+              "asset_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "task_title_revision",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`revision_seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `task_id` TEXT NOT NULL, `title` TEXT NOT NULL, `effective_wall_ms` INTEGER NOT NULL, `effective_app_date` TEXT NOT NULL, `zone_epoch_seq` INTEGER NOT NULL, FOREIGN KEY(`task_id`) REFERENCES `task`(`task_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "revisionSeq",
+            "columnName": "revision_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskId",
+            "columnName": "task_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "effectiveWallMs",
+            "columnName": "effective_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "effectiveAppDate",
+            "columnName": "effective_app_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoneEpochSeq",
+            "columnName": "zone_epoch_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "revision_seq"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_task_title_revision_task_id_effective_wall_ms",
+            "unique": true,
+            "columnNames": [
+              "task_id",
+              "effective_wall_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_task_title_revision_task_id_effective_wall_ms` ON `${TABLE_NAME}` (`task_id`, `effective_wall_ms`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "task",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "task_id"
+            ],
+            "referencedColumns": [
+              "task_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "daily_occurrence",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`occurrence_id` TEXT NOT NULL, `task_id` TEXT NOT NULL, `app_date` TEXT NOT NULL, `zone_epoch_seq` INTEGER NOT NULL, `display_title_snapshot` TEXT NOT NULL, `created_at_ms` INTEGER NOT NULL, PRIMARY KEY(`occurrence_id`), FOREIGN KEY(`task_id`) REFERENCES `task`(`task_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "occurrenceId",
+            "columnName": "occurrence_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskId",
+            "columnName": "task_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appDate",
+            "columnName": "app_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoneEpochSeq",
+            "columnName": "zone_epoch_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "displayTitleSnapshot",
+            "columnName": "display_title_snapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtMs",
+            "columnName": "created_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "occurrence_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_daily_occurrence_task_id_app_date",
+            "unique": true,
+            "columnNames": [
+              "task_id",
+              "app_date"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_daily_occurrence_task_id_app_date` ON `${TABLE_NAME}` (`task_id`, `app_date`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "task",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "task_id"
+            ],
+            "referencedColumns": [
+              "task_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "occurrence_completion_event",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`event_seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `occurrence_id` TEXT NOT NULL, `action` INTEGER NOT NULL, `occurred_wall_ms` INTEGER NOT NULL, `app_date` TEXT NOT NULL, `zone_epoch_seq` INTEGER NOT NULL, FOREIGN KEY(`occurrence_id`) REFERENCES `daily_occurrence`(`occurrence_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "eventSeq",
+            "columnName": "event_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurrenceId",
+            "columnName": "occurrence_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "action",
+            "columnName": "action",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredWallMs",
+            "columnName": "occurred_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appDate",
+            "columnName": "app_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoneEpochSeq",
+            "columnName": "zone_epoch_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "event_seq"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_occurrence_completion_event_occurrence_id_event_seq",
+            "unique": false,
+            "columnNames": [
+              "occurrence_id",
+              "event_seq"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_occurrence_completion_event_occurrence_id_event_seq` ON `${TABLE_NAME}` (`occurrence_id`, `event_seq`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "daily_occurrence",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "occurrence_id"
+            ],
+            "referencedColumns": [
+              "occurrence_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "daily_occurrence_view",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`occurrence_id` TEXT NOT NULL, `is_completed` INTEGER NOT NULL, `completed_wall_ms` INTEGER, `derived_from_event_high_water` INTEGER NOT NULL, PRIMARY KEY(`occurrence_id`), FOREIGN KEY(`occurrence_id`) REFERENCES `daily_occurrence`(`occurrence_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "occurrenceId",
+            "columnName": "occurrence_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isCompleted",
+            "columnName": "is_completed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedWallMs",
+            "columnName": "completed_wall_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "derivedFromEventHighWater",
+            "columnName": "derived_from_event_high_water",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "occurrence_id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "daily_occurrence",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "occurrence_id"
+            ],
+            "referencedColumns": [
+              "occurrence_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "temporary_completion_event",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`event_seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `task_id` TEXT NOT NULL, `action` INTEGER NOT NULL, `occurred_wall_ms` INTEGER NOT NULL, `app_date` TEXT NOT NULL, `title_snapshot` TEXT NOT NULL, FOREIGN KEY(`task_id`) REFERENCES `task`(`task_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "eventSeq",
+            "columnName": "event_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskId",
+            "columnName": "task_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "action",
+            "columnName": "action",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredWallMs",
+            "columnName": "occurred_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appDate",
+            "columnName": "app_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "titleSnapshot",
+            "columnName": "title_snapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "event_seq"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_temporary_completion_event_task_id_event_seq",
+            "unique": false,
+            "columnNames": [
+              "task_id",
+              "event_seq"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_temporary_completion_event_task_id_event_seq` ON `${TABLE_NAME}` (`task_id`, `event_seq`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "task",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "task_id"
+            ],
+            "referencedColumns": [
+              "task_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "focus_session",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `task_id` TEXT NOT NULL, `mode` INTEGER NOT NULL, `target_seconds` INTEGER, `state` INTEGER NOT NULL, `created_wall_ms` INTEGER NOT NULL, `finished_wall_ms` INTEGER, `source` TEXT NOT NULL, PRIMARY KEY(`session_id`), FOREIGN KEY(`task_id`) REFERENCES `task`(`task_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "taskId",
+            "columnName": "task_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "mode",
+            "columnName": "mode",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetSeconds",
+            "columnName": "target_seconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdWallMs",
+            "columnName": "created_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "finishedWallMs",
+            "columnName": "finished_wall_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "session_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_focus_session_task_id_created_wall_ms",
+            "unique": false,
+            "columnNames": [
+              "task_id",
+              "created_wall_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_focus_session_task_id_created_wall_ms` ON `${TABLE_NAME}` (`task_id`, `created_wall_ms`)"
+          },
+          {
+            "name": "index_focus_session_state",
+            "unique": false,
+            "columnNames": [
+              "state"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_focus_session_state` ON `${TABLE_NAME}` (`state`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "task",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "task_id"
+            ],
+            "referencedColumns": [
+              "task_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "session_segment",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`segment_id` TEXT NOT NULL, `session_id` TEXT NOT NULL, `seg_seq` INTEGER NOT NULL, `start_wall_ms` INTEGER NOT NULL, `end_wall_ms` INTEGER, `start_elapsed_ms` INTEGER NOT NULL, `end_elapsed_ms` INTEGER, `start_boot_tag` TEXT NOT NULL, `end_boot_tag` TEXT, `title_snapshot` TEXT NOT NULL, `zone_epoch_seq` INTEGER NOT NULL, `derived` INTEGER NOT NULL, PRIMARY KEY(`segment_id`), FOREIGN KEY(`session_id`) REFERENCES `focus_session`(`session_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "segmentId",
+            "columnName": "segment_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "segSeq",
+            "columnName": "seg_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startWallMs",
+            "columnName": "start_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endWallMs",
+            "columnName": "end_wall_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "startElapsedMs",
+            "columnName": "start_elapsed_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endElapsedMs",
+            "columnName": "end_elapsed_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "startBootTag",
+            "columnName": "start_boot_tag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endBootTag",
+            "columnName": "end_boot_tag",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "titleSnapshot",
+            "columnName": "title_snapshot",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoneEpochSeq",
+            "columnName": "zone_epoch_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "derived",
+            "columnName": "derived",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "segment_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_session_segment_session_id_seg_seq",
+            "unique": true,
+            "columnNames": [
+              "session_id",
+              "seg_seq"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_session_segment_session_id_seg_seq` ON `${TABLE_NAME}` (`session_id`, `seg_seq`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "focus_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "session_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "active_session_slot",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`slot_id` INTEGER NOT NULL, `session_id` TEXT NOT NULL, PRIMARY KEY(`slot_id`), FOREIGN KEY(`session_id`) REFERENCES `focus_session`(`session_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "slotId",
+            "columnName": "slot_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "slot_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_active_session_slot_session_id",
+            "unique": true,
+            "columnNames": [
+              "session_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_active_session_slot_session_id` ON `${TABLE_NAME}` (`session_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "focus_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "session_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "session_heartbeat",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `wall_ms` INTEGER NOT NULL, `elapsed_ms` INTEGER NOT NULL, `boot_tag` TEXT NOT NULL, `heartbeat_kind` INTEGER NOT NULL, PRIMARY KEY(`session_id`), FOREIGN KEY(`session_id`) REFERENCES `focus_session`(`session_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "sessionId",
+            "columnName": "session_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "wallMs",
+            "columnName": "wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "elapsedMs",
+            "columnName": "elapsed_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bootTag",
+            "columnName": "boot_tag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "heartbeatKind",
+            "columnName": "heartbeat_kind",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "session_id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "focus_session",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "session_id"
+            ],
+            "referencedColumns": [
+              "session_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ledger_entry",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`ledger_seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `kind` INTEGER NOT NULL, `ref_id` TEXT, `task_id` TEXT NOT NULL, `app_date` TEXT NOT NULL, `occurred_wall_ms` INTEGER NOT NULL, `zone_epoch_seq` INTEGER NOT NULL, `delta_seconds` INTEGER, `set_total_seconds` INTEGER, `created_wall_ms` INTEGER NOT NULL, `edited_at_ms` INTEGER, `is_deleted` INTEGER NOT NULL, `deleted_at_ms` INTEGER, FOREIGN KEY(`task_id`) REFERENCES `task`(`task_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "ledgerSeq",
+            "columnName": "ledger_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "refId",
+            "columnName": "ref_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "taskId",
+            "columnName": "task_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appDate",
+            "columnName": "app_date",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "occurredWallMs",
+            "columnName": "occurred_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoneEpochSeq",
+            "columnName": "zone_epoch_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deltaSeconds",
+            "columnName": "delta_seconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "setTotalSeconds",
+            "columnName": "set_total_seconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdWallMs",
+            "columnName": "created_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "editedAtMs",
+            "columnName": "edited_at_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isDeleted",
+            "columnName": "is_deleted",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deletedAtMs",
+            "columnName": "deleted_at_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "ledger_seq"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ledger_entry_task_id_app_date_occurred_wall_ms_ledger_seq",
+            "unique": false,
+            "columnNames": [
+              "task_id",
+              "app_date",
+              "occurred_wall_ms",
+              "ledger_seq"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entry_task_id_app_date_occurred_wall_ms_ledger_seq` ON `${TABLE_NAME}` (`task_id`, `app_date`, `occurred_wall_ms`, `ledger_seq`)"
+          },
+          {
+            "name": "index_ledger_entry_kind_ref_id",
+            "unique": true,
+            "columnNames": [
+              "kind",
+              "ref_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_ledger_entry_kind_ref_id` ON `${TABLE_NAME}` (`kind`, `ref_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "task",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "task_id"
+            ],
+            "referencedColumns": [
+              "task_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "ledger_entry_audit",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`audit_seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `ledger_seq` INTEGER NOT NULL, `prev_delta_seconds` INTEGER, `prev_set_total_seconds` INTEGER, `new_delta_seconds` INTEGER, `new_set_total_seconds` INTEGER, `changed_at_ms` INTEGER NOT NULL, `change_kind` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "auditSeq",
+            "columnName": "audit_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ledgerSeq",
+            "columnName": "ledger_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "prevDeltaSeconds",
+            "columnName": "prev_delta_seconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "prevSetTotalSeconds",
+            "columnName": "prev_set_total_seconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "newDeltaSeconds",
+            "columnName": "new_delta_seconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "newSetTotalSeconds",
+            "columnName": "new_set_total_seconds",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "changedAtMs",
+            "columnName": "changed_at_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "changeKind",
+            "columnName": "change_kind",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "audit_seq"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_ledger_entry_audit_ledger_seq_audit_seq",
+            "unique": false,
+            "columnNames": [
+              "ledger_seq",
+              "audit_seq"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_ledger_entry_audit_ledger_seq_audit_seq` ON `${TABLE_NAME}` (`ledger_seq`, `audit_seq`)"
+          }
+        ]
+      },
+      {
+        "tableName": "zone_epoch",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`epoch_seq` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `zone_id` TEXT NOT NULL, `effective_wall_ms` INTEGER NOT NULL, `impact_summary` TEXT NOT NULL, `created_wall_ms` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "epochSeq",
+            "columnName": "epoch_seq",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "zoneId",
+            "columnName": "zone_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "effectiveWallMs",
+            "columnName": "effective_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "impactSummary",
+            "columnName": "impact_summary",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdWallMs",
+            "columnName": "created_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "epoch_seq"
+          ]
+        }
+      },
+      {
+        "tableName": "command_log",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`command_id` TEXT NOT NULL, `applied_wall_ms` INTEGER NOT NULL, `command_kind` TEXT NOT NULL, `result_digest` TEXT NOT NULL, `expected_revision` INTEGER NOT NULL, `actual_revision` INTEGER NOT NULL, PRIMARY KEY(`command_id`))",
+        "fields": [
+          {
+            "fieldPath": "commandId",
+            "columnName": "command_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "appliedWallMs",
+            "columnName": "applied_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "commandKind",
+            "columnName": "command_kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "resultDigest",
+            "columnName": "result_digest",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "expectedRevision",
+            "columnName": "expected_revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualRevision",
+            "columnName": "actual_revision",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "command_id"
+          ]
+        }
+      },
+      {
+        "tableName": "art_asset",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`asset_id` TEXT NOT NULL, `source` TEXT NOT NULL, `license` TEXT NOT NULL, `license_scope` TEXT NOT NULL, `attribution` TEXT NOT NULL, `evidence_path` TEXT NOT NULL, `sha256` TEXT NOT NULL, `width` INTEGER NOT NULL, `height` INTEGER NOT NULL, `color_space` TEXT NOT NULL, `crop_safe_area` TEXT NOT NULL, PRIMARY KEY(`asset_id`))",
+        "fields": [
+          {
+            "fieldPath": "assetId",
+            "columnName": "asset_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "license",
+            "columnName": "license",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "licenseScope",
+            "columnName": "license_scope",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attribution",
+            "columnName": "attribution",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "evidencePath",
+            "columnName": "evidence_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "width",
+            "columnName": "width",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "height",
+            "columnName": "height",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "colorSpace",
+            "columnName": "color_space",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "cropSafeArea",
+            "columnName": "crop_safe_area",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "asset_id"
+          ]
+        }
+      },
+      {
+        "tableName": "app_setting",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `value` TEXT NOT NULL, PRIMARY KEY(`key`))",
+        "fields": [
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "value",
+            "columnName": "value",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "key"
+          ]
+        }
+      },
+      {
+        "tableName": "backup_record",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`record_id` TEXT NOT NULL, `kind` INTEGER NOT NULL, `created_wall_ms` INTEGER NOT NULL, `file_path` TEXT NOT NULL, `size_bytes` INTEGER NOT NULL, `sha256` TEXT NOT NULL, `manifest_json` TEXT NOT NULL, PRIMARY KEY(`record_id`))",
+        "fields": [
+          {
+            "fieldPath": "recordId",
+            "columnName": "record_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdWallMs",
+            "columnName": "created_wall_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "filePath",
+            "columnName": "file_path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sizeBytes",
+            "columnName": "size_bytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sha256",
+            "columnName": "sha256",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "manifestJson",
+            "columnName": "manifest_json",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "record_id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '86b56e4873edf3cf31496e080627a738')"
+    ]
+  }
+}

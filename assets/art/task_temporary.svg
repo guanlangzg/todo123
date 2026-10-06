@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 216 216" width="216" height="216">
+  <!-- task_temporary — 临时任务：飘落的便签。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <rect id="bg" x="0" y="0" width="216" height="216" fill="#EFE8DB"/>
+
+  <!-- 落下的动势 -->
+  <path d="M52 22 44 34M76 16 74 30M100 22 98 36" fill="none" stroke="#5F6E78"
+        stroke-width="3" stroke-linecap="round"/>
+
+  <!-- 层 1：后排便签 -->
+  <path d="M34 58 100 44 126 74 60 88Z" fill="#D8B267" stroke="#192C3B" stroke-width="4"/>
+  <path d="M118 52 126 74 104 79Z" fill="#7A5410" opacity="0.55"/>
+
+  <!-- 层 2：中排便签 -->
+  <path d="M46 106 112 92 138 122 72 136Z" fill="#FFFFFF" stroke="#192C3B" stroke-width="4"/>
+  <path d="M130 100 138 122 116 127Z" fill="#E6DED0"/>
+
+  <!-- 层 3：前排便签 -->
+  <path d="M20 152 86 138 112 168 46 182Z" fill="#A2C8C2" stroke="#192C3B" stroke-width="4"/>
+  <path d="M104 146 112 168 90 173Z" fill="#5E9993"/>
+
+  <!-- 便签上的手写线 -->
+  <path d="M58 68 110 58M66 78 118 68" fill="none" stroke="#5F6E78" stroke-width="3" stroke-linecap="round"/>
+  <path d="M68 112 120 102M76 122 128 112" fill="none" stroke="#5F6E78" stroke-width="3" stroke-linecap="round"/>
+  <path d="M42 158 94 148M50 168 102 158" fill="none" stroke="#192C3B" stroke-width="3"
+        stroke-linecap="round" opacity="0.5"/>
+
+  <!-- 丝网颗粒：只落在背景色块内部，右侧 24dp 静区保持平整 -->
+  <g id="grain" fill="#7F8A92" opacity="0.35">
+    <circle cx="24" cy="52" r="1.6"/><circle cx="16" cy="112" r="1.6"/><circle cx="30" cy="200" r="1.6"/>
+    <circle cx="12" cy="192" r="1.6"/><circle cx="120" cy="16" r="1.6"/><circle cx="18" cy="30" r="1.6"/>
+    <circle cx="90" cy="200" r="1.6"/><circle cx="128" cy="176" r="1.6"/>
+  </g>
+</svg>

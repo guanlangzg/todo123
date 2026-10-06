@@ -1,0 +1,24 @@
+# Paths that must not be committed (工程布局与版本锁定.md §1).
+# Kept, deliberately: rust/Cargo.lock, app/schemas/**, gradle/wrapper/**.
+
+local.properties
+.gradle/
+build/
+app/build/
+rust/target/
+rust/build/
+# Build-generated: jniLibs come from cargo, the bindings from uniffi-bindgen.
+app/src/main/jniLibs/
+
+*.iml
+.idea/
+.kotlin/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Never commit credentials or signing material.
+*.keystore
+*.jks
+*.p12
+keystore.properties

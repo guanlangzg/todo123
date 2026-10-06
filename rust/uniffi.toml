@@ -1,0 +1,6 @@
+# UniFFI binding configuration.
+# MUST live at the crate root (rust/uniffi.toml) - see 工程布局与版本锁定.md §4.1 constraint 2.
+[bindings.kotlin]
+package_name = "app.arttodo.core"
+cdylib_name = "arttodo_core"
+generate_immutable_records = true

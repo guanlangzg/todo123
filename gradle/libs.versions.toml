@@ -1,0 +1,69 @@
+# Single source of truth for dependency versions.
+# Locked per docs/设计/工程布局与版本锁定.md §5.1. Do NOT bump without re-reading §5.2/§5.4:
+#  - compileSdk is pinned at 36 (only platforms;android-36 is installed), so compose-bom must stay
+#    2026.06.01 / core-ktx 1.18.0 / lifecycle 2.10.0 / navigation 2.9.8.
+#  - KSP 2.3.12 requires AGP >= 8.12.0; AGP 8.12 requires Gradle >= 8.13.
+#  - Kotlin 2.4.20 deprecates Gradle 8.13 but accepts it; before moving to Kotlin 2.5.0 the wrapper
+#    must first go to Gradle >= 8.14.4 (not cached on this machine, needs network).
+
+[versions]
+agp = "8.12.3"
+kotlin = "2.4.20"
+ksp = "2.3.12"
+composeBom = "2026.06.01"
+room = "2.8.5"
+coreKtx = "1.18.0"
+activityCompose = "1.13.0"
+lifecycle = "2.10.0"
+navigation = "2.9.8"
+jna = "5.19.1"
+coroutines = "1.11.0"
+robolectric = "4.17"
+junit = "4.13.2"
+truth = "1.4.5"
+androidxTest = "1.7.0"
+benchmark = "1.5.0"
+
+[libraries]
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
+
+compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+compose-ui = { module = "androidx.compose.ui:ui" }
+compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+compose-foundation = { module = "androidx.compose.foundation:foundation" }
+compose-material3 = { module = "androidx.compose.material3:material3" }
+compose-material-icons = { module = "androidx.compose.material:material-icons-extended" }
+# Compose UI testing (BOM-managed). Added so the layout and accessibility promises of the design
+# system — 48dp targets, heading/branching order, large-font gates — are asserted by a build gate
+# rather than by eye. Runs on the JVM through Robolectric, so it needs no device.
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+
+room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+
+# JNA must be consumed as an @aar so libjnidispatch.so lands in the APK
+# (docs/设计/工程布局与版本锁定.md §4.2). Unit tests additionally use the plain jar below.
+jna-aar = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+jna-jar = { module = "net.java.dev.jna:jna", version.ref = "jna" }
+
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTest" }
+androidx-test-runner = { module = "androidx.test:runner", version.ref = "androidxTest" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+junit = { module = "junit:junit", version.ref = "junit" }
+truth = { module = "com.google.truth:truth", version.ref = "truth" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

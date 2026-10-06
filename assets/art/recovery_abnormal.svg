@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 656 320" width="656" height="320">
+  <!-- recovery_abnormal — 异常恢复：断开的折线被重新接上。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <rect id="bg" x="0" y="0" width="656" height="320" fill="#EFE8DB"/>
+  <rect id="field" x="0" y="0" width="656" height="142" fill="#FBF8F2"/>
+
+  <!-- 图形组整体上移，使深色轮廓全部收在 y<128（底部 96dp 文字安全区上方） -->
+  <g transform="translate(0,-13)">
+  <!-- 层 1：基线 -->
+  <path d="M48 130H608" fill="none" stroke="#192C3B" stroke-width="3" opacity="0.5"/>
+  <path d="M104 130v10M216 130v10M328 130v10M440 130v10M552 130v10" fill="none"
+        stroke="#192C3B" stroke-width="3" opacity="0.5" stroke-linecap="round"/>
+
+  <!-- 层 2：已记录的一段（钴蓝） -->
+  <path d="M56 118 136 82 216 104" fill="none" stroke="#2F5D8C" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="56" cy="118" r="5" fill="#192C3B"/>
+  <circle cx="136" cy="82" r="5" fill="#192C3B"/>
+
+  <!-- 层 3：待确认的推算空档（浅色连接，不代表已投入） -->
+  <path d="M216 104 300 60" fill="none" stroke="#5F6E78" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="216" cy="104" r="9" fill="#FBF8F2" stroke="#B64931" stroke-width="4"/>
+  <circle cx="300" cy="60" r="9" fill="#FBF8F2" stroke="#B64931" stroke-width="4"/>
+  <path d="M258 40 273 66 243 66Z" fill="#B64931" stroke="#192C3B" stroke-width="3"
+        stroke-linejoin="round"/>
+
+  <!-- 层 4：重新接上的一段（青绿） -->
+  <path d="M300 60 380 96 460 58 540 74" fill="none" stroke="#1F6B63" stroke-width="6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="380" cy="96" r="5" fill="#192C3B"/>
+  <circle cx="460" cy="58" r="5" fill="#192C3B"/>
+  <circle cx="540" cy="74" r="5" fill="#192C3B"/>
+  </g>
+
+  <!-- 层 5：地面 -->
+  <rect id="floor" x="0" y="142" width="656" height="178" fill="#F5F0E8"/>
+
+  <!-- 丝网颗粒：只在留白内 -->
+  <g id="grain" fill="#7F8A92" opacity="0.32">
+    <circle cx="24" cy="20" r="1.7"/><circle cx="120" cy="14" r="1.7"/><circle cx="196" cy="18" r="1.7"/>
+    <circle cx="340" cy="14" r="1.7"/><circle cx="420" cy="18" r="1.7"/><circle cx="596" cy="20" r="1.7"/>
+    <circle cx="636" cy="96" r="1.7"/><circle cx="24" cy="98" r="1.7"/><circle cx="640" cy="132" r="1.7"/>
+  </g>
+</svg>

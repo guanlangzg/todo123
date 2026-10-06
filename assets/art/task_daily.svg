@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 216 216" width="216" height="216">
+  <!-- task_daily — 日常任务：日历格与叶。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <rect id="bg" x="0" y="0" width="216" height="216" fill="#EFE8DB"/>
+
+  <!-- 层 1：日历 -->
+  <rect x="16" y="46" width="112" height="106" fill="#FFFFFF" stroke="#192C3B" stroke-width="4"/>
+  <rect x="16" y="46" width="112" height="26" fill="#7A5410" stroke="#192C3B" stroke-width="4"/>
+  <path d="M44 34v18M100 34v18" fill="none" stroke="#192C3B" stroke-width="4" stroke-linecap="round"/>
+  <path d="M53 72v80M90 72v80M16 98h112M16 124h112" fill="none" stroke="#5F6E78" stroke-width="2.5"/>
+
+  <!-- 层 2：日期格 -->
+  <rect x="25" y="78" width="20" height="12" fill="#A2C8C2"/>
+  <rect x="62" y="78" width="20" height="12" fill="#A2C8C2"/>
+  <rect x="99" y="78" width="20" height="12" fill="#5E9993"/>
+  <rect x="25" y="104" width="20" height="12" fill="#A2C8C2"/>
+  <rect x="62" y="104" width="20" height="12" fill="#1F6B63"/>
+  <rect x="99" y="104" width="20" height="12" fill="#A2C8C2"/>
+  <rect x="25" y="130" width="20" height="12" fill="#A2C8C2"/>
+  <rect x="62" y="130" width="20" height="12" fill="#A2C8C2"/>
+
+  <!-- 层 3：叶（脉络全部收在叶形内部，避免线条外溢） -->
+  <path d="M84 140C114 128 140 152 132 186 104 194 80 170 84 140Z" fill="#1F6B63" stroke="#192C3B" stroke-width="4"/>
+  <path d="M88 146 128 182" fill="none" stroke="#E7EFE6" stroke-width="3" stroke-linecap="round"/>
+  <path d="M102 158 94 166M114 169 106 177" fill="none" stroke="#E7EFE6"
+        stroke-width="3" stroke-linecap="round"/>
+
+  <!-- 丝网颗粒：右侧 24dp 静区保持平整 -->
+  <g id="grain" fill="#7F8A92" opacity="0.35">
+    <circle cx="18" cy="28" r="1.6"/><circle cx="52" cy="20" r="1.6"/><circle cx="86" cy="26" r="1.6"/>
+    <circle cx="24" cy="196" r="1.6"/><circle cx="56" cy="204" r="1.6"/><circle cx="126" cy="22" r="1.6"/>
+    <circle cx="30" cy="168" r="1.6"/><circle cx="12" cy="76" r="1.6"/>
+  </g>
+</svg>

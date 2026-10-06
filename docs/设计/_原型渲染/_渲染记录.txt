@@ -1,0 +1,68 @@
+原型渲染检查记录（由 scripts/test/verify_prototype_offline.py 自动生成）
+生成命令：python scripts/test/verify_prototype_offline.py
+结束状态：通过
+
+运行开始时已清理上一轮截图：43 张（目录内不留任何非本轮产物）
+本轮截图：43 张
+目录内 PNG：43 张
+清单一致性：一致
+
+请求总数：22，全部 file://（其中 9 个是刻意保留的缺失素材引用，用于触发真实退化视觉）
+控制台错误：仅 ERR_FILE_NOT_FOUND（素材缺失），无脚本错误
+
+本轮截图清单（name / 字节 / sha256前16）：
+  focus-done                192281  8b28f93ddac86b30
+  focus-largefont           182443  5e7ea816940ab22c
+  focus-midnight            176153  c6b0506797c5d1b4
+  focus-paused              223374  fca5f7ce623fdab9
+  focus-running             222517  42ef47d66a45fa04
+  focus-select              155267  1fafb14ec3b49b7e
+  focus-select-night        186907  389c7981fbb9c173
+  focus-switch              208489  e1e6f9757ea93baa
+  insight-empty             176432  90a666836c2dd043
+  insight-error             172947  1bb9b4e62e593b37
+  insight-largefont         274766  be919ec919b19e98
+  insight-longtitle         210706  ede09ce78e3acbb0
+  insight-normal            239583  46f8481bcfbcfc42
+  insight-normal-night      283101  c4ac97edca16169a
+  insight-warn              178306  61cab9ffbcd95c94
+  overview                 1692636  7d0ed3375f399aa6
+  records-dayempty          212901  700846443530dd31
+  records-del               192482  b7b0185f1179ccb1
+  records-empty             153130  b15ac535894e9980
+  records-error             154790  a5beea0e562d3a25
+  records-largefont         212602  17de3a00ad07b52a
+  records-normal            199187  ba799d110b138e05
+  records-normal-night      242700  163960afec6c8010
+  records-sheet             140338  28c148028fc89e27
+  records-warn              153563  dd6892b581a3a0f3
+  settings-badpw            206354  f39eb00eba82db31
+  settings-largefont        178510  19acc4d54540b8da
+  settings-normal           193675  fe972f5dea4578f7
+  settings-normal-night     234939  87bcc89eec058b3c
+  settings-nospace          193838  fa8ae890c5c6c037
+  settings-restore          187971  e01693c6cce85814
+  settings-restorefail      174549  6d660581de821dae
+  settings-zone             174258  6ccee748b3cfe07c
+  today-crowded             185714  7fc9f9837d70f22b
+  today-empty               176107  1b8f6d6c1d1b232b
+  today-error               194299  273dfac4fe978e59
+  today-focusing            208825  dd7544574865519a
+  today-largefont           207159  d072f1c010203fc9
+  today-largefont-reduced   253912  535cee272d64c24d
+  today-longtitle           207540  18a359f377d7b973
+  today-normal              223603  2f2daf63968bea58
+  today-normal-night        254163  a55efc3d4b690ded
+  today-recovery            194261  025790122c73b2d0
+
+五页 × 全状态覆盖：
+  today     normal, focusing, empty, crowded, recovery, error, longtitle, largefont
+  focus     select, running, paused, done, midnight, switch, largefont
+  records   normal, empty, dayempty, sheet, del, warn, error, largefont
+  insight   normal, empty, warn, error, longtitle, largefont
+  settings  normal, zone, restore, badpw, nospace, restorefail, largefont
+
+注意：本检查是桌面 Chromium 的 HTML 布局、离线性与状态区分度验证。
+它不能替代 Android/Compose 真机渲染、TalkBack 朗读、系统 inset 适配、
+系统 CJK 字体栅格化或真机性能测量——这些在 docs/设计/设计系统.md 第 13 节
+与 docs/设计/关键页面高保真说明.md 第 8 节逐条列为未验证。

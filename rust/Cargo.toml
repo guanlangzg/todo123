@@ -1,0 +1,34 @@
+[package]
+name = "arttodo_core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.93"
+publish = false
+description = "Domain core for the personal art Todo Android app (tasks, timers, day slicing, ledger, stats)."
+
+[lib]
+# cdylib for UniFFI's `--library` binding generation; lib for the integration tests.
+name = "arttodo_core"
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+jiff = "0.2"
+uniffi = { version = "=0.32.2", features = ["cli"] }
+thiserror = "2"
+
+[dev-dependencies]
+# Property tests for the domain invariants that must hold for *every* input, not just the samples
+# in 架构契约 §4.3.3: replay ordering, pause accounting, slice sums.
+proptest = "1.11"
+
+[build-dependencies]
+
+[[bin]]
+# In-crate binding generator, so no external `uniffi-bindgen` install is required.
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[profile.release]
+# MANDATORY: 架构契约 §10. UniFFI only contains a Rust panic at the FFI boundary when the
+# release profile unwinds (E17/E18). Guarded by the `cargo rustc --lib -- --print cfg` gate.
+panic = "unwind"

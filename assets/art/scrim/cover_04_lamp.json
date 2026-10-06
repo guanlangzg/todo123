@@ -1,0 +1,18 @@
+{
+  "name": "cover_04_lamp",
+  "frame": "cover",
+  "canvas": { "widthPx": 656, "heightPx": 400, "dpW": 328, "dpH": 200, "scale": 2 },
+  "scrimColor": "#192C3B",
+  "scrimStops": [
+    { "offset": 0.0, "alpha": 0.0 },
+    { "offset": 0.18, "alpha": 0.0 },
+    { "offset": 0.38, "alpha": 0.52 },
+    { "offset": 0.54, "alpha": 0.72 },
+    { "offset": 0.66, "alpha": 0.84 },
+    { "offset": 1.0, "alpha": 0.86 }
+  ],
+  "safeText": { "x": 0.0488, "y": 0.64, "w": 0.9024, "h": 0.36 },
+  "dominantColors": ["#F5F0E8", "#2F5D8C", "#D8B267"],
+  "minContrastOnScrim": 4.5,
+  "provenance": "遮罩停位取自 docs/设计/视觉原型.html:228 的封面渐变（本项目的设计默认，非第三方素材）"
+}

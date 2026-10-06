@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 656 400" width="656" height="400">
+  <!-- cover_01_morning — 晨光／摊开的纸页。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <!-- 光源说明（设计系统 §5.3「插画与阴影共用左上 45° 单一光源」）：
+       本幅唯一光源是左上方的晨光，由下方带 keyLight 标记的光晕承载，供门禁核对光源象限。
+       四幅封面的柔光渐变一律用同一锚点 cx/cy = 0.18/0.12（上左），
+       使按日期 mod 4 轮换封面时光线方向不跳动。 -->
+
+  <defs>
+    <radialGradient id="keyGlow" cx="0.18" cy="0.12" r="0.6">
+      <stop offset="0" stop-color="#FBE4C4" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#FBE4C4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect id="bg" x="0" y="0" width="656" height="400" fill="#EFE8DB"/>
+
+  <!-- 层 1：天空场，错位 8px 的印版压边 -->
+  <rect id="sky" x="0" y="0" width="656" height="238" fill="#2F5D8C"/>
+  <rect id="skyShift" x="0" y="230" width="656" height="14" fill="#25517B" opacity="0.85"/>
+
+  <!-- 层 2：台面 -->
+  <rect id="deskTop" x="0" y="244" width="656" height="20" fill="#E6DED0"/>
+  <rect id="desk" x="0" y="264" width="656" height="136" fill="#F5F0E8"/>
+
+  <!-- 层 3：晨光——光源固定在左上，与 §5.3 的左上 45° 单一光源一致 -->
+  <circle id="keyLight" cx="180" cy="110" r="80" fill="url(#keyGlow)"/>
+  <circle cx="180" cy="110" r="54" fill="#F2A03D"/>
+  <circle cx="180" cy="110" r="54" fill="none" stroke="#192C3B" stroke-width="3"/>
+  <path d="M104 54 74 28M172 28v-16M258 66 288 40M290 114h22" fill="none"
+        stroke="#192C3B" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- 层 4：摊开的纸页 -->
+  <path d="M120 246 222 226V174L120 194Z" fill="#FFFFFF" stroke="#192C3B" stroke-width="3"/>
+  <path d="M222 226 330 242V190L222 174Z" fill="#FBF8F2" stroke="#192C3B" stroke-width="3"/>
+  <path d="M222 174v52" fill="none" stroke="#192C3B" stroke-width="3"/>
+  <path d="M140 206 204 192M140 220 204 206M140 234 204 220" fill="none"
+        stroke="#5F6E78" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M240 190 314 204M240 204 314 218M240 218 314 232" fill="none"
+        stroke="#5F6E78" stroke-width="2.5" stroke-linecap="round"/>
+
+  <!-- 丝网颗粒：只在天空色块内部，避开底部文字安全区 -->
+  <g id="grain" fill="#25517B" opacity="0.35">    <circle cx="40" cy="40" r="1.7"/><circle cx="78" cy="86" r="1.7"/><circle cx="118" cy="34" r="1.7"/>
+    <circle cx="150" cy="120" r="1.7"/><circle cx="196" cy="64" r="1.7"/><circle cx="232" cy="140" r="1.7"/>
+    <circle cx="268" cy="30" r="1.7"/><circle cx="300" cy="96" r="1.7"/><circle cx="342" cy="52" r="1.7"/>
+    <circle cx="372" cy="160" r="1.7"/><circle cx="410" cy="120" r="1.7"/><circle cx="60" cy="170" r="1.7"/>
+    <circle cx="104" cy="206" r="1.7"/><circle cx="160" cy="182" r="1.7"/><circle cx="214" cy="214" r="1.7"/>
+    <circle cx="268" cy="170" r="1.7"/><circle cx="330" cy="206" r="1.7"/><circle cx="388" cy="214" r="1.7"/>
+    <circle cx="440" cy="196" r="1.7"/><circle cx="556" cy="40" r="1.7"/><circle cx="600" cy="86" r="1.7"/>
+    <circle cx="636" cy="140" r="1.7"/><circle cx="596" cy="196" r="1.7"/><circle cx="520" cy="214" r="1.7"/>
+    <circle cx="430" cy="54" r="1.7"/><circle cx="560" cy="150" r="1.7"/>
+  </g>
+</svg>

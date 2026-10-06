@@ -1,0 +1,7 @@
+# Clippy configuration. `disallowed-methods` is used by 架构契约.md §1 (Rust may not call the
+# system clock) and §1 (no filesystem / no threads in the domain core).
+disallowed-methods = [
+    { path = "std::time::SystemTime::now", reason = "时钟由 Kotlin 采样后以 ClockSample 传入（架构契约 §1/§2）" },
+    { path = "std::fs::File::open", reason = "Rust 不做 I/O（架构契约 §1 禁止清单）" },
+    { path = "std::thread::spawn", reason = "Rust 不起线程（架构契约 §1 禁止清单）" },
+]

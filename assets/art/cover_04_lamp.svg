@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 656 400" width="656" height="400">
+  <!-- cover_04_lamp — 台灯与堆叠书本。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <!-- 光源说明（设计系统 §5.3「插画与阴影共用左上 45° 单一光源」）：
+       本幅唯一光源是左上方的台灯，由下方带 keyLight 标记的灯光光晕承载，供门禁核对光源象限。
+       四幅封面的柔光渐变一律用同一锚点 cx/cy = 0.18/0.12（上左），
+       使按日期 mod 4 轮换封面时光线方向不跳动。 -->
+
+  <defs>
+    <radialGradient id="keyGlow" cx="0.18" cy="0.12" r="0.6">
+      <stop offset="0" stop-color="#D8B267" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#D8B267" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect id="bg" x="0" y="0" width="656" height="400" fill="#EFE8DB"/>
+
+  <!-- 层 1：夜间墙面场 -->
+  <rect id="wall" x="0" y="0" width="656" height="236" fill="#2F5D8C"/>
+  <rect id="wallShift" x="0" y="228" width="656" height="14" fill="#25517B" opacity="0.85"/>
+
+  <!-- 层 2：台面。原本此处另有右上角月亮，已移除：它构成第二个右上光源，
+       与 §5.3 的单一左上光源及 §7.1「局部柔和空间光最多一处」冲突。
+       本幅唯一光源是台灯，其灯锥自上方落下，方向与左上光源一致。 -->
+  <rect id="deskEdge" x="0" y="236" width="656" height="16" fill="#1E4670" opacity="0.85"/>
+  <rect id="desk" x="0" y="252" width="656" height="148" fill="#F5F0E8"/>
+
+  <!-- 层 3：灯头周围的柔和光晕（本幅唯一光源，位于画面上左象限） -->
+  <ellipse id="keyLight" cx="205" cy="140" rx="130" ry="90" fill="url(#keyGlow)"/>
+
+  <!-- 层 4：灯光锥（赭金，与本幅的赭红/钴蓝合计三个色槽） -->
+  <path d="M136 190 288 190 372 252 52 252Z" fill="#D8B267" opacity="0.22"/>
+
+  <!-- 层 4：台灯 -->
+  <path d="M150 128 268 128 298 186 122 186Z" fill="#B64931" stroke="#192C3B" stroke-width="3"/>
+  <path d="M130 176 288 176 298 186 122 186Z" fill="#D8B267" stroke="#192C3B" stroke-width="3"/>
+  <path d="M209 186v38" fill="none" stroke="#192C3B" stroke-width="5" stroke-linecap="round"/>
+  <ellipse cx="209" cy="232" rx="64" ry="13" fill="#D8B267" stroke="#192C3B" stroke-width="3"/>
+
+  <!-- 层 5：堆叠书本 -->
+  <rect x="406" y="218" width="196" height="18" fill="#B64931" stroke="#192C3B" stroke-width="3"/>
+  <rect x="418" y="200" width="172" height="18" fill="#F5F0E8" stroke="#192C3B" stroke-width="3"/>
+  <rect x="400" y="182" width="206" height="18" fill="#D8B267" stroke="#192C3B" stroke-width="3"/>
+  <path d="M432 182v18M470 200v18M448 218v18" fill="none" stroke="#192C3B" stroke-width="3" opacity="0.55"/>
+
+  <!-- 丝网颗粒：只在墙面色块内部 -->
+  <g id="grain" fill="#25517B" opacity="0.38">
+    <circle cx="44" cy="48" r="1.7"/><circle cx="86" cy="112" r="1.7"/><circle cx="128" cy="36" r="1.7"/>
+    <circle cx="96" cy="204" r="1.7"/><circle cx="160" cy="70" r="1.7"/><circle cx="214" cy="24" r="1.7"/>
+    <circle cx="330" cy="42" r="1.7"/><circle cx="386" cy="108" r="1.7"/><circle cx="430" cy="36" r="1.7"/>
+    <circle cx="352" cy="180" r="1.7"/><circle cx="298" cy="212" r="1.7"/><circle cx="628" cy="46" r="1.7"/>
+    <circle cx="640" cy="150" r="1.7"/><circle cx="620" cy="206" r="1.7"/><circle cx="66" cy="164" r="1.7"/>
+  </g>
+</svg>

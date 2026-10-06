@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 656 400" width="656" height="400">
+  <!-- cover_02_desk — 工作台／笔与杯。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <!-- 光源说明（设计系统 §5.3「插画与阴影共用左上 45° 单一光源」）：
+       本幅唯一光源是左上方射入的暖光，由下方带 keyLight 标记的光晕承载，供门禁核对光源象限。
+       四幅封面的柔光渐变一律用同一锚点 cx/cy = 0.18/0.12（上左），
+       使按日期 mod 4 轮换封面时光线方向不跳动。 -->
+
+  <defs>
+    <radialGradient id="keyGlow" cx="0.18" cy="0.12" r="0.6">
+      <stop offset="0" stop-color="#FBE4C4" stop-opacity="0.5"/>
+      <stop offset="1" stop-color="#FBE4C4" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect id="bg" x="0" y="0" width="656" height="400" fill="#EFE8DB"/>
+
+  <!-- 层 1：墙面场 -->
+  <rect id="wall" x="0" y="0" width="656" height="236" fill="#D8B267"/>
+  <rect id="wallShift" x="0" y="228" width="656" height="14" fill="#7A5410" opacity="0.55"/>
+
+  <!-- 层 2：左上射入的暖光（本幅唯一光源） -->
+  <ellipse id="keyLight" cx="150" cy="56" rx="120" ry="86" fill="url(#keyGlow)"/>
+  <path d="M150 26 108 2M238 40 270 16M64 74 28 60" fill="none" stroke="#FBE4C4"
+        stroke-width="3" stroke-linecap="round" opacity="0.75"/>
+
+  <!-- 层 2：台面 -->
+  <rect id="deskEdge" x="0" y="242" width="656" height="18" fill="#7A5410" opacity="0.35"/>
+  <rect id="desk" x="0" y="260" width="656" height="140" fill="#F5F0E8"/>
+
+  <!-- 层 3：杯与托碟（整组收在 y≤244，底部 72dp 文字安全区内不放深色轮廓） -->
+  <ellipse cx="214" cy="224" rx="74" ry="16" fill="#FFFFFF" stroke="#192C3B" stroke-width="3"/>
+  <path d="M160 150h108v52a54 22 0 0 1-108 0z" fill="#5E9993" stroke="#192C3B" stroke-width="3"/>
+  <path d="M268 164c22 0 22 40 0 40" fill="none" stroke="#192C3B" stroke-width="3" stroke-linecap="round"/>
+  <path d="M168 150h92" fill="none" stroke="#192C3B" stroke-width="3" stroke-linecap="round"/>
+  <path d="M192 132c-8-14 8-20 0-34M216 132c-8-14 8-20 0-34" fill="none"
+        stroke="#192C3B" stroke-width="2.5" stroke-linecap="round" opacity="0.6"/>
+
+  <!-- 层 4：笔 -->
+  <!-- 笔：笔尖收在 y≤251，不越过 256 的安全区顶边 -->
+  <path d="M352 244 520 150" fill="none" stroke="#B64931" stroke-width="14" stroke-linecap="round"/>
+  <path d="M352 244 520 150" fill="none" stroke="#192C3B" stroke-width="3" stroke-linecap="round" opacity="0.35"/>
+  <path d="M520 150 566 122 578 140 534 168Z" fill="#EFE8DB" stroke="#192C3B" stroke-width="3"/>
+  <path d="M566 122 578 140 592 130Z" fill="#192C3B"/>
+
+  <!-- 层 5：裁切垫上的刻度暗示 -->
+  <path d="M404 240h212M404 246h212" fill="none" stroke="#192C3B" stroke-width="2" opacity="0.35"/>
+
+  <!-- 丝网颗粒：只在墙面色块内部 -->
+  <g id="grain" fill="#7A5410" opacity="0.32">
+    <circle cx="44" cy="52" r="1.7"/><circle cx="88" cy="120" r="1.7"/><circle cx="132" cy="40" r="1.7"/>
+    <circle cx="176" cy="98" r="1.7"/><circle cx="228" cy="46" r="1.7"/><circle cx="272" cy="118" r="1.7"/>
+    <circle cx="320" cy="36" r="1.7"/><circle cx="366" cy="92" r="1.7"/><circle cx="416" cy="52" r="1.7"/>
+    <circle cx="462" cy="116" r="1.7"/><circle cx="508" cy="44" r="1.7"/><circle cx="556" cy="96" r="1.7"/>
+    <circle cx="602" cy="40" r="1.7"/><circle cx="640" cy="112" r="1.7"/><circle cx="62" cy="186" r="1.7"/>
+    <circle cx="118" cy="204" r="1.7"/><circle cx="332" cy="192" r="1.7"/><circle cx="392" cy="212" r="1.7"/>
+    <circle cx="452" cy="196" r="1.7"/><circle cx="512" cy="214" r="1.7"/><circle cx="572" cy="194" r="1.7"/>
+    <circle cx="628" cy="212" r="1.7"/>
+  </g>
+</svg>

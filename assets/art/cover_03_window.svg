@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 656 400" width="656" height="400">
+  <!-- cover_03_window — 窗与植物剪影。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <!-- 光源说明（设计系统 §5.3「插画与阴影共用左上 45° 单一光源」）：
+       本幅光源是左上方的窗户，由下方带 keyLight 标记的窗光柔光承载，供门禁核对光源象限。
+       四幅封面的柔光渐变一律用同一锚点 cx/cy = 0.18/0.12（上左），
+       使按日期 mod 4 轮换封面时光线方向不跳动。 -->
+
+  <defs>
+    <radialGradient id="keyGlow" cx="0.18" cy="0.12" r="0.6">
+      <stop offset="0" stop-color="#F2A03D" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#F2A03D" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect id="bg" x="0" y="0" width="656" height="400" fill="#EFE8DB"/>
+
+  <!-- 层 1：墙面色场 -->
+  <rect id="wall" x="0" y="0" width="656" height="236" fill="#1F6B63"/>
+  <rect id="wallShift" x="0" y="228" width="656" height="14" fill="#164F49" opacity="0.85"/>
+
+  <!-- 层 2：窗光晕散（画在窗之前，形成窗周光晕） -->
+  <ellipse id="keyLight" cx="200" cy="112" rx="150" ry="104" fill="url(#keyGlow)"/>
+
+  <!-- 层 2：窗框与窗外 -->
+  <rect id="frame" x="96" y="36" width="300" height="176" fill="#F5F0E8" stroke="#192C3B" stroke-width="3"/>
+  <rect id="paneL" x="110" y="50" width="128" height="148" fill="#2F5D8C"/>
+  <rect id="paneR" x="254" y="50" width="128" height="148" fill="#2F5D8C"/>
+  <rect id="paneL2" x="110" y="50" width="128" height="148" fill="none" stroke="#192C3B" stroke-width="3"/>
+  <rect id="paneR2" x="254" y="50" width="128" height="148" fill="none" stroke="#192C3B" stroke-width="3"/>
+  <path d="M246 36v176" fill="none" stroke="#192C3B" stroke-width="3"/>
+
+  <!-- 层 3：台面与窗台 -->
+  <rect id="desk" x="0" y="252" width="656" height="148" fill="#F5F0E8"/>
+  <rect id="sill" x="84" y="200" width="324" height="14" fill="#EFE8DB" stroke="#192C3B" stroke-width="3"/>
+
+  <!-- 层 4：植物剪影 -->
+  <path d="M150 196C118 158 130 104 168 88 184 124 176 168 150 196Z" fill="#1F6B63"/>
+  <path d="M196 200C182 158 202 108 240 96 248 138 230 178 196 200Z" fill="#1F6B63"/>
+  <path d="M172 206C152 186 148 156 162 134 182 156 186 186 172 206Z" fill="#1F6B63"/>
+  <path d="M186 214C180 186 182 156 190 138" fill="none" stroke="#1F6B63" stroke-width="4" stroke-linecap="round"/>
+  <path d="M156 214h68l-10 38h-48z" fill="#5E9993" stroke="#192C3B" stroke-width="3"/>
+
+  <!-- 层 5：窗光斜向洒落到右下方，方向与左上 45° 光源一致（避开底部文字安全区 y≥256） -->
+  <path d="M398 150 444 150 604 244 468 244Z" fill="#F2A03D" opacity="0.42"/>
+
+  <!-- 丝网颗粒：只在墙面色块内部，避开窗洞 -->
+  <g id="grain" fill="#164F49" opacity="0.4">
+    <circle cx="30" cy="60" r="1.7"/><circle cx="52" cy="150" r="1.7"/><circle cx="28" cy="210" r="1.7"/>
+    <circle cx="46" cy="110" r="1.7"/><circle cx="64" cy="188" r="1.7"/><circle cx="34" cy="24" r="1.7"/>
+    <circle cx="452" cy="50" r="1.7"/><circle cx="500" cy="110" r="1.7"/><circle cx="556" cy="58" r="1.7"/>
+    <circle cx="604" cy="140" r="1.7"/><circle cx="640" cy="70" r="1.7"/><circle cx="470" cy="180" r="1.7"/>
+    <circle cx="520" cy="200" r="1.7"/><circle cx="580" cy="170" r="1.7"/><circle cx="636" cy="210" r="1.7"/>
+    <circle cx="120" cy="18" r="1.7"/><circle cx="200" cy="16" r="1.7"/><circle cx="300" cy="18" r="1.7"/>
+    <circle cx="420" cy="16" r="1.7"/><circle cx="560" cy="20" r="1.7"/><circle cx="640" cy="18" r="1.7"/>
+  </g>
+</svg>

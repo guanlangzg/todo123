@@ -1,0 +1,6 @@
+# Rust toolchain pin (工程布局与版本锁定.md §5.5). Matches rustc 1.93.1 on this machine.
+[toolchain]
+channel = "1.93.1"
+components = ["rustfmt", "clippy"]
+targets = ["aarch64-linux-android", "x86_64-linux-android"]
+profile = "minimal"

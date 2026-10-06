@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 656 320" width="656" height="320">
+  <!-- chart_heatmap — 统计主题：格子矩阵演化。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <rect id="bg" x="0" y="0" width="656" height="320" fill="#EFE8DB"/>
+  <rect id="field" x="0" y="0" width="656" height="140" fill="#FBF8F2"/>
+
+  <!-- 图形组整体上移，使深色轮廓全部收在 y<128（底部 96dp 文字安全区上方） -->
+  <g transform="translate(0,-11)">
+  <!-- 层 1：无记录格（虚线轮廓以短线段等价表达，不使用描边虚线属性） -->
+  <g stroke="#8C7C63" stroke-width="2" fill="none">
+    <rect x="40" y="22" width="30" height="30"/><rect x="82" y="22" width="30" height="30"/>
+    <rect x="124" y="22" width="30" height="30"/><rect x="166" y="22" width="30" height="30"/>
+    <rect x="40" y="62" width="30" height="30"/><rect x="82" y="62" width="30" height="30"/>
+    <rect x="40" y="102" width="30" height="30"/>
+  </g>
+
+  <!-- 层 2：色阶 1 -->
+  <g fill="#A2C8C2">
+    <rect x="208" y="22" width="30" height="30"/><rect x="292" y="22" width="30" height="30"/>
+    <rect x="334" y="22" width="30" height="30"/><rect x="418" y="22" width="30" height="30"/>
+    <rect x="460" y="22" width="30" height="30"/><rect x="502" y="22" width="30" height="30"/>
+    <rect x="124" y="62" width="30" height="30"/><rect x="166" y="62" width="30" height="30"/>
+    <rect x="208" y="62" width="30" height="30"/><rect x="250" y="62" width="30" height="30"/>
+    <rect x="82" y="102" width="30" height="30"/><rect x="124" y="102" width="30" height="30"/>
+    <rect x="166" y="102" width="30" height="30"/>
+  </g>
+
+  <!-- 层 3：色阶 2 -->
+  <g fill="#5E9993">
+    <rect x="376" y="22" width="30" height="30"/><rect x="292" y="62" width="30" height="30"/>
+    <rect x="334" y="62" width="30" height="30"/><rect x="376" y="62" width="30" height="30"/>
+    <rect x="460" y="62" width="30" height="30"/><rect x="502" y="62" width="30" height="30"/>
+    <rect x="208" y="102" width="30" height="30"/><rect x="250" y="102" width="30" height="30"/>
+    <rect x="418" y="102" width="30" height="30"/><rect x="460" y="102" width="30" height="30"/>
+  </g>
+
+  <!-- 层 4：色阶 3 与色阶 4 -->
+  <g fill="#256560">
+    <rect x="418" y="62" width="30" height="30"/><rect x="292" y="102" width="30" height="30"/>
+    <rect x="334" y="102" width="30" height="30"/><rect x="376" y="102" width="30" height="30"/>
+  </g>
+  <rect x="502" y="102" width="30" height="30" fill="#093E3B"/>
+  <rect x="460" y="102" width="30" height="30" fill="#093E3B"/>
+
+  <!-- 层 5：选中格（赭金），供点击详情的视觉锚点 -->
+  <rect x="250" y="22" width="30" height="30" fill="#D8B267" stroke="#192C3B" stroke-width="3"/>
+
+  <!-- 层 6：趋势线 -->
+  <path d="M540 132 560 96 580 110 600 60 620 74 638 34" fill="none" stroke="#2F5D8C"
+        stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M636 20 652 32 634 44Z" fill="#2F5D8C" transform="translate(0,-18)"/>
+  </g>
+
+  <!-- 丝网颗粒：只在顶部留白与左侧留白内 -->
+  <g id="grain" fill="#7F8A92" opacity="0.32">
+    <circle cx="16" cy="14" r="1.7"/><circle cx="300" cy="10" r="1.7"/><circle cx="392" cy="8" r="1.7"/>
+    <circle cx="600" cy="12" r="1.7"/><circle cx="18" cy="70" r="1.7"/><circle cx="16" cy="126" r="1.7"/>
+    <circle cx="640" cy="112" r="1.7"/><circle cx="556" cy="14" r="1.7"/>
+  </g>
+</svg>

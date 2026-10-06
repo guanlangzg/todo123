@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 216 216" width="216" height="216">
+  <!-- state_paused — 暂停：半开的门／静止指针。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <rect id="bg" x="0" y="0" width="216" height="216" fill="#EFE8DB"/>
+
+  <!-- 层 1：门洞 -->
+  <path d="M20 192V84a60 60 0 0 1 120 0v108z" fill="#E6DED0" stroke="#192C3B" stroke-width="4"/>
+
+  <!-- 层 2：静止指针 -->
+  <circle cx="70" cy="44" r="11" fill="none" stroke="#192C3B" stroke-width="4"/>
+  <path d="M70 44V36M70 44h8" fill="none" stroke="#2F5D8C" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- 层 3：两扇停在半开的门 -->
+  <rect x="46" y="64" width="30" height="114" rx="6" fill="#2F5D8C" stroke="#192C3B" stroke-width="4"/>
+  <rect x="90" y="64" width="30" height="114" rx="6" fill="#D8B267" stroke="#192C3B" stroke-width="4"/>
+  <path d="M98 76 112 72M98 94 112 90" fill="none" stroke="#7A5410" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- 层 4：地面线 -->
+  <!-- 地面线收在 x=140 以内，右侧 24dp 静区保持干净（设计系统 §7.2 card 帧） -->
+  <path d="M14 192h126" fill="none" stroke="#192C3B" stroke-width="4" stroke-linecap="round"/>
+
+  <!-- 丝网颗粒：只落在门洞色块内部，右侧 24dp 静区保持平整 -->
+  <g id="grain" fill="#7F8A92" opacity="0.4">
+    <circle cx="32" cy="96" r="1.6"/><circle cx="32" cy="128" r="1.6"/><circle cx="60" cy="160" r="1.6"/>
+    <circle cx="112" cy="164" r="1.6"/><circle cx="128" cy="100" r="1.6"/><circle cx="128" cy="140" r="1.6"/>
+    <circle cx="24" cy="176" r="1.6"/><circle cx="84" cy="190" r="1.6"/>
+    <circle cx="136" cy="20" r="1.6"/><circle cx="18" cy="28" r="1.6"/>
+  </g>
+</svg>

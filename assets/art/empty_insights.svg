@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 656 320" width="656" height="320">
+  <!-- empty_insights — 空态：空白坐标纸。原创矢量插画，见 docs/设计/素材权利清单.md -->
+  <rect id="bg" x="0" y="0" width="656" height="320" fill="#EFE8DB"/>
+  <rect id="field" x="0" y="0" width="656" height="16" fill="#2F5D8C"/>
+
+  <!-- 层 1：坐标纸 -->
+  <rect x="64" y="16" width="528" height="108" fill="#FFFFFF" stroke="#192C3B" stroke-width="4"/>
+  <g stroke="#8FB4DC" stroke-width="2">
+    <path d="M108 16v118M152 16v118M196 16v118M240 16v118M284 16v118M328 16v118M372 16v118M416 16v118M460 16v118M504 16v118M548 16v118"/>
+    <path d="M64 45h528M64 74h528M64 103h528"/>
+  </g>
+
+  <!-- 层 2：坐标轴（不加任何数据点——空矩阵或示意点会被误读为「全是零投入」，
+       见 docs/设计/关键页面高保真说明.md 洞察页空态约定） -->
+  <path d="M76 12v100h508" fill="none" stroke="#192C3B" stroke-width="4"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M576 104v16M76 12v-8" fill="none" stroke="#192C3B" stroke-width="4" stroke-linecap="round"/>
+  <path d="M76 112 76 94 94 112Z" fill="#1F6B63"/>
+
+  <!-- 层 3：地面 -->
+  <rect id="floor" x="0" y="138" width="656" height="182" fill="#F5F0E8"/>
+
+  <!-- 丝网颗粒：只在纸面与留白内 -->
+  <g id="grain" fill="#7F8A92" opacity="0.3">
+    <circle cx="26" cy="170" r="1.7"/><circle cx="40" cy="118" r="1.7"/><circle cx="624" cy="118" r="1.7"/>
+    <circle cx="88" cy="34" r="1.7"/><circle cx="336" cy="60" r="1.7"/><circle cx="560" cy="88" r="1.7"/>
+  </g>
+</svg>

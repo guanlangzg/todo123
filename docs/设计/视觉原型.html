@@ -1,0 +1,2796 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>私人工作室日历 · 视觉原型（离线单文件）</title>
+<!--
+  离线单文件原型。无外部请求：不引用 CDN、不加载远程字体、不请求任何网络资源。
+
+  素材：assets/art/ 下的 15 幅 SVG 已由「插画创作员」交付。Chromium 禁止 file:// 页面
+  加载 file:// 子资源（opaque origin 子资源策略），双击打开的单文件无法用相对路径引用它们，
+  因此脚本区 INLINE_ART 保存了这些 SVG 的 base64 逐字节副本；这是默认模式。
+  切到「不可加载」模式会恢复相对路径，<img> 的 onerror 真实触发并落到
+  docs/设计/设计系统.md §7.6 定义的退化视觉，因此「图片缺失」状态演示的是**真实**加载失败路径。
+
+  素材权利与 SHA-256 见 docs/设计/素材权利清单.md；本原型只引用文件名，不声明其来源与授权。
+  素材在页面中的裁切/遮罩实测见 docs/设计/素材适配样例.md。
+-->
+<style>
+/* ── 专注页 ─────────────────────────────────────────────────── */
+.mode-card{
+  display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px; width:100%; text-align:left; font:inherit;
+  cursor:pointer; background:var(--card); border:1px solid var(--line); border-radius:16px;
+  padding:14px; margin-top:8px; color:var(--ink); min-height:88px;
+}
+.mode-card[aria-checked="true"]{ border:2px solid var(--accent); background:var(--accent-tint); }
+.mc-ico{ flex:0 0 24px; color:var(--ink2); margin-top:2px; }
+.mc-ico svg{ width:24px; height:24px; }
+.mode-card[aria-checked="true"] .mc-ico{ color:var(--accent); }
+.mc-txt{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+/* 分钟步进占满一整行：[-] 48dp + 数值 + [+] 48dp + 快捷档，横排时放不下会溢出卡片（已实测） */
+.mc-min{
+  flex:1 0 100%; display:flex; flex-direction:column; align-items:flex-start; gap:6px;
+  margin-top:10px; padding-top:10px; border-top:1px solid var(--line);
+}
+.mm-label{ font-size:12px; font-weight:600; color:var(--ink3); }
+.mm-row{ display:flex; align-items:center; gap:4px; }
+.mm-val{
+  min-width:56px; text-align:center; font-size:26px; font-weight:700; color:var(--ink);
+  font-variant-numeric:tabular-nums;
+}
+.mm-quick{ display:flex; gap:6px; }
+.mm-quick button{
+  min-width:44px; min-height:40px; border-radius:8px; border:1px solid var(--line-ctl);
+  background:var(--card); color:var(--ink2); font:inherit; font-size:13px; font-weight:600; cursor:pointer;
+}
+.mm-quick button[aria-pressed="true"]{ background:var(--accent-tint); border-color:var(--accent); color:var(--accent); }
+
+.focus-big{
+  /* 计时数字：字号由 JS 按设计系统 §3.5 的**离散档位表**选取并显式写入 inline style
+     （52 → 44 → 40 → 36 → 32，取「按当前 fontScale 放大后仍能放进可用宽」的最大档）。
+     早期这里是写死的 52px、不带 var(--fs)、也没有档位切换，等于该设计规则从未落地；
+     现由 applyTimerLadder() 复刻同一张表，并在数字下方标注当前选用档位，便于审阅核对。 */
+  font-size:52px;                 /* JS 未执行时的回退值 */
+  line-height:1.15; font-weight:700; color:var(--ink);
+  font-variant-numeric:tabular-nums; letter-spacing:.01em; margin-top:18px;
+  white-space:nowrap;
+}
+.focus-big.paused{ color:var(--ink3); }
+.ladder-badge{
+  display:inline-block; margin-top:6px; border-radius:999px; padding:3px 10px;
+  background:var(--tint); color:var(--ink2); font-size:11px; font-weight:600;
+}
+/* 进度环在大字号下收缩：运行态的「暂停/结束」必须**不用滚动**就能按到
+   （实测 2.0 档：环 200px 把控制按钮推到 navTop 之下 51px，即按钮被底栏挡住）。
+   环是装饰性进度指示，不是操作目标，因此优先让位。 */
+.focus-ring{ margin:14px auto 0; display:grid; place-items:center; }
+.focus-ring svg{ width:200px; height:200px; }
+.phone[data-fs-band="3"] .focus-ring svg{ width:140px; height:140px; }
+.phone[data-fs-band="4"] .focus-ring{ display:none; }
+.focus-ctl{ display:flex; justify-content:center; gap:32px; margin-top:8px; }
+.cbtn{
+  width:64px; height:64px; border-radius:50%; border:1.5px solid var(--ink2); background:var(--card);
+  color:var(--ink2); cursor:pointer; display:grid; place-items:center;
+}
+.cbtn svg{ width:26px; height:26px; }
+.cbtn.run{ border-color:var(--running); color:var(--running); }
+.result-ctl{ display:flex; gap:12px; margin-top:24px; }
+
+.day-opt{
+  display:flex; flex-direction:column; align-items:flex-start; gap:2px; width:100%; text-align:left;
+  font:inherit; cursor:pointer; border-radius:16px; padding:14px; margin-top:10px; min-height:64px;
+  background:var(--card); border:1px solid var(--line); color:var(--ink);
+}
+.day-opt.primary{ border:2px solid var(--accent); background:var(--accent-tint); }
+
+/* 底部操作条：模式选择页的「开始」必须始终可见——它是整页唯一的实心赭红主按钮，
+   也是「在点开始之前绝不计时」这条验收主线的落点。
+   用绝对定位贴在底部导航之上（不要放在 .scroll 内做 sticky：负外边距会把它拉到内容中段）。 */
+.action-bar{
+  position:absolute; left:0; right:0; bottom:80px; z-index:2;
+  padding:12px 16px 14px; background:var(--raised); border-top:1px solid var(--line);
+}
+.action-bar .hint{ font-size:12px; font-weight:600; color:var(--ink3); margin-bottom:8px; text-align:center; }
+
+/* 手机外的说明块：评审脚手架放在手机**外面**，不占产品屏幕像素 */
+.page-note{
+  max-width:340px; font-size:11.5px; line-height:1.7; color:#596771;
+  background:#FBF8F2; border:1px solid #DDD3C2; border-left:3px solid #B64931;
+  border-radius:10px; padding:10px 12px;
+}
+.page-note b{ color:#192C3B; }
+
+/* panel 帧插画：按契约比例 656:320（= 328:160dp）满宽放置，避免 contain 产生信箱留白。
+   （原用 height:120px + object-fit:contain，留出一条浅色空带，已修） */
+.art-panel{ width:100%; border-radius:12px; overflow:hidden; background:var(--tint); }
+.art-panel img{ display:block; width:100%; aspect-ratio:656 / 320; object-fit:cover; }
+
+/* ── 记录页 ─────────────────────────────────────────────────── */
+.rec-month{ display:flex; align-items:center; justify-content:space-between; margin:12px 0 4px; }
+/* 月份标题是**结构性导航标签**（不是用户内容），按设计系统 §3.6 的原则设上限；
+   不设上限时 2.0 档会折成「2026 年 10 / 月」，中文词语被拦腰断开。 */
+.rec-month .t-headS{ font-size:clamp(20px, calc(20px * var(--fs)), 28px); white-space:nowrap; }
+.rec-month .ibtn{ width:48px; }
+.det-group{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:8px; }
+.det-h{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.det-h > *{ min-width:0; }
+.det-h .t-titleM{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.det-row{
+  display:flex; align-items:center; gap:8px; min-height:44px;
+  border-top:1px solid var(--line); margin-top:8px; padding-top:8px;
+}
+.det-row > span:first-child{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.det-row > span:nth-child(2){ font-variant-numeric:tabular-nums; font-weight:600; color:var(--ink); }
+.input-like{
+  margin-top:6px; background:var(--card); border:1.5px solid var(--line-ctl); border-radius:10px;
+  padding:12px 14px; font-size:18px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums;
+}
+
+/* ── 设置页 ─────────────────────────────────────────────────── */
+.restore-head{ display:flex; gap:10px; align-items:flex-start; background:var(--danger-tint); border-radius:16px; padding:14px; margin-top:24px; }
+.restore-head svg{ width:22px; height:22px; flex:0 0 22px; margin-top:2px; }
+
+/* ============================================================
+   1. 设计 token（与 docs/设计/设计系统.md §2 一一对应）
+   ============================================================ */
+:root{
+  --canvas:#F5F0E8;
+  --tint:#EFE8DB;
+  --card:#FFFFFF;
+  --raised:#FBF8F2;
+  --line:#DDD3C2;
+  --line-ctl:#7F8A92;
+  --ink:#192C3B;
+  --ink2:#596771;
+  --ink3:#5F6E78;
+  --accent:#B64931;
+  --accent-deep:#953C28;
+  --accent-tint:#FBEFEA;
+  --on-accent:#FFFFFF;
+  --running:#1F6B63;
+  --done-ink:#2E6B4F;
+  --done-tint:#E7EFE6;
+  --warn-ink:#7A5410;
+  --warn-tint:#F7E9C9;
+  --danger-ink:#A3241C;
+  --danger-tint:#F7DFDA;
+  --s1:#2F5D8C; --s2:#1F6B63; --s3:#B64931; --s4:#7A5410; --s5:#5F6E78; --s6:#6B4A7A;
+  --heat0:#E6DED0; --heat1:#A2C8C2; --heat2:#5E9993; --heat3:#256560; --heat4:#093E3B;
+  --heat-dash:#8C7C63;
+  --scrim:25,44,59;           /* #192C3B 供 rgba 用 */
+  --shadow-float:0 8px 24px rgba(25,44,59,.10);
+}
+/* 工作室夜幕 —— 深色不是浅色反转：容器抬升靠亮度，插画遮罩改黑色叠层 */
+[data-theme="night"]{
+  --canvas:#0F1720;
+  --tint:#16202B;
+  --card:#1B2733;
+  --raised:#22303D;
+  --line:#3B4A57;
+  --line-ctl:#6E7C89;
+  --ink:#F2EDE4;
+  --ink2:#B9C4CC;
+  --ink3:#9AA7B2;
+  --accent:#E0705A;
+  --accent-deep:#E0705A;
+  --accent-tint:#3A2018;
+  --accent-fill:#C0553C;
+  --on-accent:#FFFFFF;
+  --running:#7FC4BA;
+  --done-ink:#8ACBA5;
+  --done-tint:#15271E;
+  --warn-ink:#E0BC72;
+  --warn-tint:#2B2415;
+  --danger-ink:#F59A90;
+  --danger-tint:#301A18;
+  --s1:#8FB4DC; --s2:#7FC4BA; --s3:#E0705A; --s4:#D8B267; --s5:#B9C4CC; --s6:#BFA0D0;
+  --heat0:#1B3F39; --heat1:#286056; --heat2:#387F74; --heat3:#5AA398; --heat4:#97CEC2;
+  --heat-dash:#8A9AA4;
+  --scrim:0,0,0;
+  --shadow-float:0 -1px 0 0 rgba(255,255,255,.06);
+}
+/* 夜幕实心按钮底：accent 在夜幕是文字色，实心必须用 accentFill */
+[data-theme="day"]{ --accent-fill:var(--accent); }
+
+/* ============================================================
+   2. 基础
+   ============================================================ */
+*{ box-sizing:border-box; margin:0; padding:0; }
+html{ -webkit-text-size-adjust:100%; }
+body{
+  /* 只用系统字体栈：离线可用、不远程加载 CJK 字体（视觉提示词第 31 行） */
+  font-family:"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+  background:#E4E0D8; color:#192C3B; padding:28px 20px 80px;
+  font-variant-numeric:tabular-nums;
+}
+h1{ font-size:24px; letter-spacing:.01em; }
+h2{ font-size:17px; }
+.sub{ color:#596771; font-size:13px; line-height:1.7; max-width:1180px; }
+.page-head{ max-width:1180px; margin:0 auto 22px; }
+.page-head h1{ margin-bottom:8px; }
+.panel{
+  max-width:1180px; margin:0 auto 22px; background:#fff; border:1px solid #DDD3C2;
+  border-radius:16px; padding:18px 20px;
+}
+.panel h2{ margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+.panel h2::before{ content:""; width:4px; height:16px; border-radius:2px; background:#B64931; }
+
+/* 控制条 */
+.controls{ display:flex; flex-wrap:wrap; gap:20px; align-items:flex-end; }
+.ctrl{ display:flex; flex-direction:column; gap:6px; }
+.ctrl > label,.ctrl > .lbl{ font-size:11px; font-weight:600; color:#5F6E78; letter-spacing:.04em; }
+.seg{ display:flex; border:1px solid #DDD3C2; border-radius:8px; overflow:hidden; background:#F5F0E8; }
+.seg button{
+  border:0; background:transparent; padding:8px 14px; font:inherit; font-size:13px; font-weight:600;
+  color:#596771; cursor:pointer; min-height:36px;
+}
+.seg button[aria-pressed="true"]{ background:#B64931; color:#fff; }
+.range{ display:flex; align-items:center; gap:10px; }
+input[type=range]{ width:150px; accent-color:#B64931; height:36px; }
+.mono-val{ font-size:12px; font-weight:700; color:#B64931; min-width:34px; }
+
+/* ============================================================
+   3. 手机框架
+   ============================================================ */
+.stage{ display:flex; flex-wrap:wrap; gap:34px; justify-content:center; align-items:flex-start; max-width:1180px; margin:0 auto; }
+.frame-wrap{ display:flex; flex-direction:column; gap:12px; align-items:center; }
+.frame-cap{ font-size:13px; font-weight:700; }
+.frame-cap span{ display:block; font-weight:400; color:#5F6E78; font-size:11.5px; margin-top:2px; text-align:center; }
+
+.phone{
+  --fs:1;
+  width:360px; height:720px; border-radius:26px; overflow:hidden; position:relative;
+  background:var(--canvas); color:var(--ink); border:1px solid rgba(25,44,59,.16);
+  box-shadow:0 18px 44px rgba(25,44,59,.22);
+  display:flex; flex-direction:column; font-size:16px;
+}
+[data-theme="night"] .phone{ border-color:rgba(255,255,255,.09); box-shadow:0 18px 44px rgba(0,0,0,.5); }
+/* 纸纹：确定性 SVG 噪声，作为 data URI 内联，无外部请求 */
+.phone::before{
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:0;
+  background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='64' height='64' filter='url(%23n)' opacity='1'/%3E%3C/svg%3E");
+  opacity:.035; mix-blend-mode:multiply;
+}
+[data-theme="night"] .phone::before{ mix-blend-mode:screen; opacity:.05; }
+/* 系统栏 inset */
+.status-bar{
+  height:24px; flex:0 0 auto; position:relative; z-index:2;
+  display:flex; align-items:center; justify-content:space-between; padding:0 16px;
+  font-size:calc(10px * var(--fs)); color:var(--ink2); font-weight:600;
+}
+.notch{ position:absolute; left:50%; top:5px; transform:translateX(-50%); width:56px; height:14px;
+  border-radius:8px; background:rgba(25,44,59,.72); }
+[data-theme="night"] .notch{ background:#000; }
+.scroll{
+  flex:1 1 auto; overflow-y:auto; position:relative; z-index:1; padding:0 16px;
+  scrollbar-width:thin;
+}
+.scroll::-webkit-scrollbar{ width:6px; }
+.scroll::-webkit-scrollbar-thumb{ background:var(--line-ctl); border-radius:3px; opacity:.5; }
+
+/* 底部导航 */
+.nav{
+  flex:0 0 auto; z-index:3; background:var(--card); border-top:1px solid var(--line);
+  display:grid; grid-template-columns:repeat(4,1fr); padding-bottom:8px;
+}
+.nav button{
+  border:0; background:transparent; font:inherit; cursor:pointer; min-height:72px;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  color:var(--ink3); padding:8px 0;
+}
+.nav button .nl{ font-size:calc(12px * var(--fs)); font-weight:600; }
+.nav button[aria-current="page"]{ color:var(--accent); }
+.nav button[aria-current="page"] .nl{ font-weight:600; }
+.nav svg{ width:28px; height:28px; }
+
+/* ============================================================
+   4. 排版（字号阶梯，全部按 --fs 放大）
+   大标题在大字号下**降档**：28sp 上限 44px、22sp 上限 36px（= 设计系统 §3.5 的同名规则，
+   避免大标题在 fontScale 2.0 时独占首屏，从而把任务挤出屏幕——原则 P2）
+   ============================================================ */
+.t-displayXL{ font-size:clamp(0px, calc(40px * var(--fs)), 56px); line-height:1.20; font-weight:700; }
+.t-displayM{  font-size:clamp(0px, calc(28px * var(--fs)), 44px); line-height:1.29; font-weight:700; }
+.t-headL{     font-size:clamp(0px, calc(26px * var(--fs)), 40px); line-height:1.31; font-weight:700; }
+.t-headM{     font-size:clamp(0px, calc(22px * var(--fs)), 36px); line-height:1.36; font-weight:700; }
+.t-headS{     font-size:calc(20px * var(--fs)); line-height:1.40; font-weight:600; }
+.t-titleL{    font-size:calc(18px * var(--fs)); line-height:1.44; font-weight:600; }
+.t-titleM{    font-size:calc(16px * var(--fs)); line-height:1.50; font-weight:600; }
+.t-bodyL{     font-size:calc(16px * var(--fs)); line-height:1.62; font-weight:400; }
+.t-bodyM{     font-size:calc(14px * var(--fs)); line-height:1.57; font-weight:400; }
+.t-labelM{    font-size:calc(12px * var(--fs)); line-height:1.50; font-weight:600; }
+.c-ink{ color:var(--ink); } .c-ink2{ color:var(--ink2); } .c-ink3{ color:var(--ink3); }
+.c-accent{ color:var(--accent); } .c-warn{ color:var(--warn-ink); } .c-danger{ color:var(--danger-ink); }
+.clamp2{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.clamp3{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.ellipsis{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* ============================================================
+   5. 组件
+   ============================================================ */
+/* 区块标题行：必须单行。2.0 档下标题与右侧计数会挤成两行（实测 112px 高 = 2 行），
+   因此标题不换行、计数可省略号收缩；计数同时不再随字号放大（它是参考信息，不是内容）。 */
+.sec-head{ display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin:26px 0 8px; }
+.sec-head:first-child{ margin-top:14px; }
+.sec-head > *{ min-width:0; }
+.sec-head .t-headS{ white-space:nowrap; flex:0 0 auto; }
+.sec-head .cnt{
+  font-size:12px; color:var(--ink3); font-weight:600;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:0 1 auto; text-align:right;
+}
+
+
+/* 展签日期 */
+.ticket{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin:12px 0 10px; }
+.ticket .anchor{ margin-top:6px; }
+
+/* 图标按钮：视觉 24dp，命中 48dp */
+.ibtn{
+  width:48px; height:48px; flex:0 0 48px; border:0; background:transparent; padding:12px;
+  cursor:pointer; border-radius:12px; color:var(--ink2); display:grid; place-items:center;
+}
+.ibtn svg{ width:24px; height:24px; }
+.ibtn:hover{ background:var(--tint); }
+.ibtn:disabled{ color:var(--ink3); opacity:.38; cursor:not-allowed; }
+
+/* 今日封面：容器尺寸取自素材画幅契约（scrim/cover_*.json: 328×200dp @2x = 656×400px）。
+   不按设计系统的「200dp 建议」与「168dp 首屏预算」折中——直接与契约一致，
+   否则素材自带 safeText/停位（按 656×400 归一化）与页面容器不再对齐。 */
+.cover{
+  position:relative; border-radius:24px; overflow:hidden; margin-bottom:2px;
+  background:var(--tint); border:1px solid var(--line); flex:0 0 auto;
+  height:200px;
+  transition:height 240ms cubic-bezier(.4,0,.2,1);
+}
+/* 大字号闸门：装饰不得把任务挤出首屏（原则 P2），且**首张任务卡必须完整可见**。
+   实测教训（见 docs/设计/关键页面高保真说明.md §1.4）：
+   档位只保证「卡片顶部露出 20px」是不够的——那次实测卡片被底栏截断 40%（155px 里只露 93px）。
+   4 档改为不显示封面；2/3 档收窄并把摘要移出封面，且逐档实测「首卡完整可见」。 */
+.phone[data-fs-band="2"] .cover{ height:152px; }
+.phone[data-fs-band="3"] .cover{ height:112px; }
+.phone[data-fs-band="4"] .cover{ display:none; }
+.phone[data-fs-band="4"] .cover-say{ display:none; }
+.cover img,.thumb img{ display:block; width:100%; height:100%; object-fit:cover; }
+/* 封面遮罩：只有渐变，文字由 .cover-say 提供（一处 DOM，两种布局） */
+.cover .scrim{
+  position:absolute; inset:0; z-index:1; pointer-events:none;
+  background:linear-gradient(to top,
+    rgba(var(--scrim),.86) 0%, rgba(var(--scrim),.84) 34%,
+    rgba(var(--scrim),.72) 46%, rgba(var(--scrim),.52) 62%, rgba(var(--scrim),0) 82%);
+}
+.cover-block{ position:relative; }
+/* 小字号：摘要叠在封面的遮罩安全区上（α .86 -> .72，白字最差 5.82:1） */
+.cover-say{
+  position:absolute; left:0; right:0; bottom:0; z-index:2; padding:14px 16px;
+  display:flex; flex-direction:column; justify-content:flex-end; pointer-events:none;
+}
+.cover-say .kicker{ color:rgba(255,255,255,.82); font-size:calc(12px * var(--fs)); font-weight:600; letter-spacing:.06em; }
+.cover-say .say{ color:#fff; font-size:calc(18px * var(--fs)); font-weight:600; line-height:1.45; margin-top:2px; }
+/* 大字号：2.0 档封面整块让位，摘要改用主墨落在画布纯色上 */
+.phone[data-fs-band="3"] .cover-say,
+.phone[data-fs-band="4"] .cover-say{
+  position:static; padding:8px 2px 0; pointer-events:auto;
+}
+.phone[data-fs-band="3"] .cover-say .kicker,
+.phone[data-fs-band="4"] .cover-say .kicker{ color:var(--ink3); }
+.phone[data-fs-band="3"] .cover-say .say,
+.phone[data-fs-band="4"] .cover-say .say{
+  color:var(--ink); font-size:calc(16px * var(--fs)); font-weight:600;
+}
+.phone[data-fs-band="3"] .cover .scrim{ opacity:.35; }
+.cover .stamp{
+  position:absolute; top:12px; left:12px; z-index:3;
+  background:rgba(var(--scrim),.86); color:#fff;
+  border-radius:8px; padding:4px 9px; font-size:calc(12px * var(--fs)); font-weight:700;
+}
+/* 图片缺失退化：容器尺寸完全不变，占位画在**底层**，所以遮罩上的文字仍然可读。
+   （早期版本把占位画成 ::after 覆盖层，结果把遮罩文字整段盖掉——已修正。） */
+.cover.missing img{ display:none; }
+.cover.missing{
+  background:var(--tint) no-repeat center/96px 96px;
+  background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'%3E%3Crect x='10' y='18' width='76' height='60' rx='6' fill='none' stroke='%235F6E78' stroke-width='2.4' stroke-dasharray='7 6'/%3E%3Cpath d='M30 62 L44 44 L55 57 L64 47 L76 62' fill='none' stroke='%235F6E78' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='34' cy='34' r='5' fill='none' stroke='%235F6E78' stroke-width='2.4'/%3E%3C/svg%3E");
+}
+/* 「插图暂不可用」放在右上角胶囊，避免与底部遮罩摘要争同一块空间 */
+.miss-note{
+  position:absolute; top:12px; right:12px; z-index:3; display:none;
+  background:rgba(var(--scrim),.86); color:#fff;
+  border-radius:8px; padding:4px 9px; font-size:calc(12px * var(--fs)); font-weight:600;
+  align-items:center; gap:5px;
+}
+.cover.missing .miss-note{ display:inline-flex; }
+.miss-note svg{ width:14px; height:14px; }
+
+/* 进行中状态卡 */
+.runbar{
+  display:flex; align-items:center; gap:10px; background:var(--card); border:1px solid var(--line);
+  border-radius:16px; padding:10px 12px; margin:10px 0; min-height:64px; position:relative;
+}
+.runbar .rail{ width:4px; align-self:stretch; border-radius:2px; background:var(--running); }
+.runbar.paused .rail{ background:none; border-left:4px dotted var(--ink3); width:0; }
+.runbar .rb-main{ flex:1 1 auto; min-width:0; }
+.runbar .rb-time{ font-size:calc(22px * var(--fs)); font-weight:700; letter-spacing:.01em; }
+.runbar.paused .rb-time{ color:var(--ink3); }
+.dot{ width:8px; height:8px; border-radius:50%; background:var(--running); flex:0 0 8px; }
+.dot.paused{ animation:none; background:var(--ink3); }
+@media (prefers-reduced-motion:no-preference){
+  .dot{ animation:breathe 1200ms ease-in-out infinite; }
+}
+@keyframes breathe{ 0%,100%{opacity:.35} 50%{opacity:1} }
+body.reduced .dot{ animation:none !important; opacity:1 !important; }
+body.reduced *{ transition:none !important; animation:none !important; }
+
+/* 任务卡 */
+.tcard{
+  display:flex; align-items:center; gap:12px; background:var(--card);
+  border:1px solid var(--line); border-radius:16px; padding:8px; margin-bottom:8px;
+  min-height:88px; position:relative; cursor:pointer; text-align:left; width:100%;
+  font:inherit; color:inherit;
+}
+.tcard.one-line{ min-height:72px; }
+.tcard .rail{ position:absolute; left:0; top:8px; bottom:8px; width:4px; border-radius:2px; background:var(--running); }
+.tcard.paused .rail{ background:none; border-left:4px dotted var(--ink3); width:0; }
+.tcard:not(.running):not(.paused) .rail{ display:none; }
+.thumb{
+  width:72px; height:72px; flex:0 0 72px; border-radius:12px 12px 12px 3px; overflow:hidden;
+  background:var(--tint); border:1px solid var(--line); position:relative;
+}
+.thumb.missing img{ display:none; }
+.thumb.missing::after{
+  content:""; position:absolute; inset:0;
+  background:var(--tint) no-repeat center/34px 34px;
+  background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 24l7-8 5 6 4-4 8 8' fill='none' stroke='%23A3241C' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Crect x='3' y='5' width='26' height='22' rx='3' fill='none' stroke='%235F6E78' stroke-width='2.2' stroke-dasharray='4 3'/%3E%3C/svg%3E");
+}
+.tcard .txt{ flex:1 1 auto; min-width:0; }
+.tcard .txt .nm{ color:var(--ink); }
+/* 「已完成」任务标题色：与设计系统 §6.3 统一为 inkSecondary。
+   （早期版本此处写 ink2 = inkSecondary，但设计系统 §6.3 写的是 doneInk 绿——同一状态两套字色。
+   现统一为 inkSecondary：完成后标题退为中性次级墨，完成事实由实心勾 + 「已完成」标签承载，
+   不让绿色同时承担「标题可读」与「状态语义」两件事。） */
+.tcard.done .txt .nm{ color:var(--ink2); }
+.tcard .meta{ display:flex; align-items:center; gap:6px; margin-top:3px; color:var(--ink3); font-size:calc(12px * var(--fs)); font-weight:600; }
+.chkbox{
+  width:48px; height:48px; flex:0 0 48px; border:0; background:transparent; cursor:pointer;
+  display:grid; place-items:center; border-radius:50%;
+}
+.chkbox .ring{
+  width:24px; height:24px; border-radius:50%; border:2px solid var(--line-ctl);
+  display:grid; place-items:center;
+}
+.tcard.done .chkbox .ring{ border-color:var(--done-ink); background:var(--done-ink); border-width:0; }
+.chkbox svg{ width:14px; height:14px; opacity:0; }
+.tcard.done .chkbox svg{ opacity:1; }
+
+/* 折叠区 */
+.fold{
+  display:flex; align-items:center; justify-content:space-between; gap:8px;
+  background:var(--tint); border:1px solid var(--line); border-radius:12px;
+  padding:0 14px; min-height:48px; width:100%; font:inherit; cursor:pointer; color:var(--ink);
+  margin-top:26px;
+}
+.fold .chev{ transition:transform 240ms cubic-bezier(.4,0,.2,1); }
+.fold[aria-expanded="true"] .chev{ transform:rotate(180deg); }
+.fold-body{ margin-top:8px; display:none; }
+.fold-body.open{ display:block; }
+.fold-note{ font-size:calc(12px * var(--fs)); color:var(--ink2); font-weight:600; padding:8px 2px; }
+
+/* 空态 / 错误 / 警告 面板 */
+.panel-in{
+  border:1px dashed var(--line-ctl); border-radius:24px; background:var(--tint);
+  padding:20px 18px; text-align:center; margin:14px 0;
+}
+.panel-in .art{ width:100%; max-width:220px; height:96px; margin:0 auto 14px; }
+.banner{
+  display:flex; gap:10px; align-items:flex-start; border-radius:12px; padding:12px 14px;
+  margin:12px 0; border-left:3px solid transparent;
+}
+.banner.warn{ background:var(--warn-tint); color:var(--warn-ink); border-left-color:var(--warn-ink); }
+.banner.danger{ background:var(--danger-tint); color:var(--danger-ink); border-left-color:var(--danger-ink); }
+.banner .bt{ font-size:calc(14px * var(--fs)); line-height:1.57; }
+.banner svg{ width:20px; height:20px; flex:0 0 20px; margin-top:1px; }
+
+.btn{
+  border:0; font:inherit; cursor:pointer; border-radius:14px; font-weight:600;
+  font-size:calc(15px * var(--fs)); min-height:52px; padding:0 20px;
+}
+.btn.block{ width:100%; }
+.btn.primary{ background:var(--accent-fill,var(--accent)); color:var(--on-accent); }
+.btn.ghost{ background:transparent; color:var(--ink); border:1.5px solid var(--line-ctl); }
+.btn.deep{ background:var(--accent-deep); color:#fff; }
+.btn.danger{ background:var(--danger-ink); color:#fff; }
+.btn.warnb{ background:var(--warn-ink); color:#fff; }
+.btn.sm{ min-height:44px; font-size:calc(13px * var(--fs)); }
+
+/* 开关 */
+.sw{ width:52px; height:32px; border-radius:16px; background:var(--line-ctl); position:relative; flex:0 0 52px; }
+.sw[aria-checked="true"]{ background:var(--accent); }
+.sw i{ position:absolute; top:4px; left:4px; width:24px; height:24px; border-radius:50%; background:#fff; }
+.sw[aria-checked="true"] i{ left:24px; }
+
+/* 设置条目 */
+.row{
+  display:flex; align-items:center; gap:12px; min-height:56px; width:100%;
+  background:var(--card); border-bottom:1px solid var(--line); padding:8px 14px;
+  font:inherit; text-align:left; color:var(--ink); cursor:pointer;
+}
+.row:first-of-type{ border-radius:12px 12px 0 0; }
+.row:last-of-type{ border-radius:0 0 12px 12px; border-bottom:0; }
+.row .rl{ flex:1 1 auto; font-size:calc(16px * var(--fs)); }
+.row .rv{ font-size:calc(14px * var(--fs)); color:var(--ink3); }
+.row .rnote{ font-size:calc(12px * var(--fs)); color:var(--ink2); }
+/* 大字号下必须**上下排**，否则「通知权限／已拒绝／去设置」会被挤成竖排单字
+   （实测 2.0 档：三个片段各只剩 122/68/80px，中文一字一行，读起来是一列散字）。
+   用容器级规则一次性覆盖所有 .row，避免每行单独打补丁。 */
+.phone[data-fs-band="3"] .row,
+.phone[data-fs-band="4"] .row{
+  flex-wrap:wrap; align-items:flex-start; row-gap:6px;
+  min-height:clamp(56px, calc(34px * var(--fs)), 96px); padding:12px 14px;
+}
+.phone[data-fs-band="3"] .row .rl,
+.phone[data-fs-band="4"] .row .rl{ flex:1 0 100%; }
+.phone[data-fs-band="3"] .row .rv,
+.phone[data-fs-band="3"] .row .rnote,
+.phone[data-fs-band="4"] .row .rv,
+.phone[data-fs-band="4"] .row .rnote{ flex:1 0 100%; padding-left:0; }
+/* 开关独占一行右侧对齐；它是独立语义节点，不与标题同行挤压 */
+.phone[data-fs-band="3"] .row .sw,
+.phone[data-fs-band="4"] .row .sw{ margin-left:auto; }
+
+/* 演示用的注释条：属于评审脚手架，**不随 --fs 缩放**，否则它会自己占满屏幕、
+   把要演示的布局挤出去（这一点是被断言抓出来的）。 */
+.anno{ background:var(--tint); color:var(--ink2); border-left-color:var(--accent); margin-top:0; }
+.anno .bt{ font-size:13px; line-height:1.6; }
+
+/* ── 记录页：日历格 ─────────────────────────────────────────────
+   为什么日期数字**不叠在色阶填充上**（这是实测得出的结论，不是偏好）：
+     实测 ink/heat.2 = 4.41:1（< 4.5）、ink/heat.3 = 2.12:1、ink/heat.4 = 1.20:1；
+     白字方向同样不可行：白字/heat.2 = 3.25:1、/heat.1 = 1.81:1、/heat.0 = 1.34:1。
+     ⇒ heat.2 是一条「墨字与白字都不达标」的死区，用改字色或加描边托盘都救不回来
+       （托盘又会让色阶语义被托盘遮住）。因此日期数字一律落在**格外的纯色**上：
+       每个格子是一个纵向单元 = 日期数字（canvas 底）+ 色块（纯装饰/色阶）。 */
+.cal{ display:grid; grid-template-columns:repeat(7,1fr); gap:4px; margin:8px 0 0; }
+.cal .dow{ text-align:center; font-size:clamp(12px, calc(12px * var(--fs)), 16px); font-weight:600; color:var(--ink3); }
+.cal .cell{
+  display:flex; flex-direction:column; align-items:center; gap:3px;
+  border:0; background:transparent; padding:0; cursor:pointer;
+  /* 必须随系统字号缩放：早期写死 44px/14px/12px，导致记录页主交互内容
+     完全不随系统字号变化（实测 normal 与 largefont 逐像素相同）。
+     上限 64px 是设计系统 §4 的「每格按内容撑到 56–64dp」；再加高会把月历推得太长。
+     7 列宽度固定为 43.4dp（360dp 屏），所以字号上限取 20px 以免横向溢出。 */
+  min-height:clamp(44px, calc(28px * var(--fs) + 16px), 64px);
+}
+.cal .cell .dn{                      /* 日期数字：永远落在 canvas 纯色上 */
+  font-size:clamp(14px, calc(14px * var(--fs)), 20px); font-weight:600; color:var(--ink);
+  line-height:1.25; min-width:20px; text-align:center;
+}
+.cal .cell .csw{                      /* 色块：只承载色阶，不承载文字。
+     class 名不用 .sw——.sw 已被设置页的开关占用（最早版本两者同名，导致日历格被拉成
+     200px 高的色条，这是实测到的渲染缺陷）。 */
+  flex:0 0 auto; border-radius:4px; background:var(--heat0);
+  width:clamp(30px, calc(20px * var(--fs) + 10px), 40px);
+  height:clamp(14px, calc(10px * var(--fs)), 20px);
+}
+.cal .cell.l1 .csw{ background:var(--heat1); }
+.cal .cell.l2 .csw{ background:var(--heat2); }
+.cal .cell.l3 .csw{ background:var(--heat3); }
+.cal .cell.l4 .csw{ background:var(--heat4); }
+/* 修正为零：实心零值格 + 一条横线（与「有投入的点」区分） */
+.cal .cell.zero .csw{ background:var(--heat0); }
+.cal .cell.zero .dn::after{ content:""; display:block; height:2px; background:var(--ink3); border-radius:1px; margin-top:1px; }
+/* 无记录：**虚线轮廓**（不是实线细框）。与洞察页同一语义、同一线索。
+   实线细框线 hairline/canvas 仅 1.31:1，低视力用户无法把它与「未来日期/空白」区分。 */
+.cal .cell.none .csw{
+  background:transparent; box-shadow:inset 0 0 0 1px var(--heat-dash);
+}
+.cal .cell.none .csw{ background-image:repeating-linear-gradient(90deg, transparent 0 3px, var(--canvas) 3px 5px); }
+/* 今天：2dp accent 描边的圆角方框（非颜色线索 = 边框粗细 + 图例） */
+.cal .cell.today .csw{ box-shadow:inset 0 0 0 2px var(--accent); }
+/* 未来日期：无框线、数字降级、不可点 */
+.cal .cell.future{ cursor:default; }
+.cal .cell.future .dn{ color:var(--ink3); opacity:.45; }
+.cal .cell.future .csw{ background:transparent; }
+/* 有完成：日期右上角 6dp 实心**圆点**（独立于投入维度；不是勾——勾留给完成控件自身） */
+.cal .cell .dn{ position:relative; }
+.cal .cell.done .dn::after{
+  content:""; position:absolute; right:-7px; top:0; width:6px; height:6px;
+  border-radius:50%; background:var(--done-ink);
+}
+/* 选中：1dp accent 外圈 */
+.cal .cell[aria-pressed="true"] .csw{ outline:2px solid var(--accent); outline-offset:1px; }
+
+/* 标签胶囊 */
+.pill{
+  display:inline-flex; align-items:center; gap:5px; border-radius:8px; padding:3px 9px;
+  font-size:calc(12px * var(--fs)); font-weight:600;
+  white-space:nowrap; flex:0 0 auto;   /* 胶囊不得换成两行（实测过「日常」被折成「日/常」） */
+}
+/* 元信息行：让文字截断，而不是把胶囊挤到换行 */
+.tcard .meta{ overflow:hidden; }
+.tcard .meta > span:not(.pill){ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.pill.tmp{ background:var(--accent-tint); color:var(--accent); }
+.pill.daily{ background:var(--tint); color:var(--ink2); border:1px solid var(--line); }
+.pill.done{ background:var(--done-tint); color:var(--done-ink); }
+.pill.run{ background:var(--done-tint); color:var(--running); }
+
+/* 洞察：热力图 */
+.hm-wrap{ position:relative; margin:6px 0 0; }
+.hm-scroll{ overflow-x:auto; padding-bottom:6px; }
+.hm-scroll::-webkit-scrollbar{ height:6px; }
+.hm-scroll::-webkit-scrollbar-thumb{ background:var(--line-ctl); border-radius:3px; }
+.hm-months{ display:flex; font-size:calc(11px * var(--fs)); color:var(--ink3); font-weight:600; margin-bottom:4px; }
+.hm-months span{ flex:0 0 auto; }
+.hm-grid{ display:grid; grid-auto-flow:column; gap:2px; width:max-content; }
+.hm-col{ display:grid; grid-template-rows:repeat(7,6.5px); gap:2px; }
+.hm-cell{
+  width:6.5px; height:6.5px; border-radius:2px; background:var(--heat0); cursor:pointer;
+  border:0; padding:0; flex:0 0 auto;
+}
+.hm-cell.l0{ background:var(--heat0); }
+.hm-cell.l1{ background:var(--heat1); }
+.hm-cell.l2{ background:var(--heat2); }
+.hm-cell.l3{ background:var(--heat3); }
+.hm-cell.l4{ background:var(--heat4); }
+/* 无记录：虚线轮廓，不用颜色差，因为单个描边色无法同时对全部色阶达 3:1 */
+.hm-cell.empty{ background:transparent; box-shadow:inset 0 0 0 1px var(--heat-dash); }
+.hm-cell.sel{ outline:2px solid var(--accent); outline-offset:1px; border-radius:2px; background-clip:padding-box; }
+.hm-fade{ position:absolute; right:0; top:16px; bottom:6px; width:26px; pointer-events:none;
+  background:linear-gradient(to right, transparent, var(--canvas)); }
+.legend{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-top:10px;
+  font-size:calc(12px * var(--fs)); color:var(--ink3); font-weight:600; }
+.legend .sw2{ width:12px; height:12px; border-radius:3px; display:inline-block; vertical-align:-1px; margin-right:4px; }
+.legend .sw2.empty{ background:transparent; box-shadow:inset 0 0 0 1px var(--heat-dash); }
+.legend .grp{ display:inline-flex; align-items:center; }
+
+/* 选中格详情卡 */
+.sel-card{
+  background:var(--card); border:1px solid var(--line); border-left:4px solid var(--accent);
+  border-radius:16px; padding:14px; margin-top:14px;
+}
+.sel-card .big{ font-size:calc(40px * var(--fs)); line-height:1.2; font-weight:700; }
+
+/* 环形图 + 图例 */
+.donut-row{ display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+.donut{ width:150px; height:150px; flex:0 0 150px; position:relative; }
+.donut .ctr{ position:absolute; inset:0; display:grid; place-items:center; text-align:center; }
+.legend-list{ flex:1 1 170px; min-width:150px; }
+.ll-row{ display:flex; align-items:center; gap:8px; min-height:32px; font-size:calc(13px * var(--fs)); }
+.ll-row .m{ width:16px; height:16px; flex:0 0 16px; border-radius:4px; display:grid; place-items:center; }
+.ll-row .nm{ flex:1 1 auto; min-width:0; }
+.ll-row .vv{ color:var(--ink2); font-weight:600; }
+
+/* 表格明细 */
+.tbl{ width:100%; border-collapse:collapse; font-size:calc(13px * var(--fs)); }
+.tbl caption{ text-align:left; font-size:calc(14px * var(--fs)); font-weight:600; padding:8px 0; color:var(--ink); }
+.tbl th,.tbl td{ text-align:left; padding:9px 8px; border-bottom:1px solid var(--line); }
+.tbl th{ font-size:calc(12px * var(--fs)); color:var(--ink3); font-weight:600; }
+.tbl td.num{ text-align:right; font-variant-numeric:tabular-nums; font-weight:600; }
+
+/* 分段控件 */
+.seg2{ display:flex; gap:8px; margin:10px 0; }
+.seg2 button{
+  min-height:44px; border-radius:12px; border:1.5px solid var(--line-ctl); background:var(--card);
+  color:var(--ink2); font:inherit; font-size:calc(13px * var(--fs)); font-weight:600; cursor:pointer; padding:0 14px;
+}
+.seg2 button[aria-pressed="true"]{ background:var(--accent-tint); border-color:var(--accent); color:var(--accent); }
+
+/* FAB：位于底部导航之上 16px（导航高 80px ⇒ bottom:96px）。
+   内容区 padding-bottom 82px > FAB 占用的 72px，保证最后一张卡可滚到 FAB 上方。 */
+.fab{
+  position:absolute; right:16px; bottom:96px; width:56px; height:56px; border-radius:50%;
+  border:1px solid var(--card); background:var(--accent-fill,var(--accent)); color:var(--on-accent);
+  cursor:pointer; display:grid; place-items:center;
+  box-shadow:0 8px 20px rgba(25,44,59,.24); z-index:2;
+}
+/* 内容底部留出 FAB 与最后一张卡的间距，避免 FAB 压住卡片内容 */
+.scroll{ padding-bottom:82px; }
+.phone[data-scrolled="true"] .fab{ box-shadow:0 8px 20px rgba(25,44,59,.3), 0 0 0 4px var(--card); }
+.fab svg{ width:26px; height:26px; }
+
+/* 状态切换器 */
+.states{ display:flex; flex-wrap:wrap; gap:6px; margin-top:12px; }
+.states button{
+  border:1px solid #DDD3C2; background:#FBF8F2; border-radius:999px; padding:6px 12px;
+  font:inherit; font-size:12px; font-weight:600; color:#596771; cursor:pointer; min-height:32px;
+}
+.states button[aria-pressed="true"]{ background:#192C3B; border-color:#192C3B; color:#fff; }
+
+/* 每个手机框架上的常驻标签：这个原型不是 Android 实现，避免截图被误引用为产品截图 */
+.frame-tag{
+  display:inline-flex; align-items:center; gap:5px; margin-top:6px;
+  background:#FBF8F2; border:1px solid #DDD3C2; border-radius:999px;
+  padding:4px 10px; font-size:11px; font-weight:600; color:#5F6E78;
+}
+.frame-tag b{ color:#B64931; }
+
+table.chk{ width:100%; border-collapse:collapse; font-size:12.5px; }
+table.chk th,table.chk td{ text-align:left; padding:7px 9px; border-bottom:1px solid #EDE8DE; }
+table.chk th{ color:#5F6E78; font-size:11px; letter-spacing:.03em; }
+table.chk td.num{ text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
+table.chk td.ok{ color:#2E6B4F; }
+table.chk code{ background:#F5F0E8; padding:1px 5px; border-radius:4px; font-size:12px; }
+.note{ font-size:12.5px; color:#596771; line-height:1.75; }
+.note b{ color:#192C3B; }
+.swatch{ display:inline-block; width:12px; height:12px; border-radius:3px; vertical-align:-2px; margin-right:5px; border:1px solid rgba(25,44,59,.18); }
+@media (max-width:1180px){ .stage{ gap:24px; } }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>私人工作室日历 · 视觉原型</h1>
+  <p class="sub">
+    离线单文件原型，直接双击打开即可。展示「今天 / 专注 / 记录 / 洞察 / 设置」五个页面的关键状态，用于审阅视觉方向、层级、
+    可读性与状态区分。<b>这是设计原型，不是 Android 实现、不是真机截图</b>；页面内的交互只用于演示状态，
+    不代表产品行为。动效与无障碍的完整规格见 <code>docs/设计/动效与无障碍说明.md</code>，
+    色板与字号见 <code>docs/设计/设计系统.md</code>。
+    <br>
+    <b>插画素材已交付</b>（<code>assets/art/</code>，15 幅 SVG + 15 张缩略图 + 9 份 scrim，权利清单见
+    <code>docs/设计/素材权利清单.md</code>）。但 Chromium 禁止 <code>file://</code> 页面加载
+    <code>file://</code> 子资源，双击打开的单文件因此<b>无法</b>用相对路径引用它们；
+    所以本原型内联了这些 SVG 的 base64 逐字节副本，默认即可看到真实素材。
+    切到「不可加载」可复现退化视觉（并把每张图应有的文件名标出来），用于审阅图片缺失态。
+  </p>
+</div>
+
+<!-- ══════════════ 控制台 ══════════════ -->
+<div class="panel">
+  <h2>审阅控制台</h2>
+  <div class="controls">
+    <div class="ctrl">
+      <span class="lbl">主题</span>
+      <div class="seg" role="group" aria-label="主题">
+        <button type="button" data-theme-btn="day" aria-pressed="true">画廊白昼</button>
+        <button type="button" data-theme-btn="night" aria-pressed="false">工作室夜幕</button>
+      </div>
+    </div>
+    <div class="ctrl">
+      <span class="lbl">系统字体大小（fontScale）</span>
+      <div class="range">
+        <input type="range" id="fs" min="1" max="2" step="0.05" value="1" aria-label="系统字体大小">
+        <span class="mono-val" id="fs-val">1.00</span>
+      </div>
+    </div>
+    <div class="ctrl">
+      <span class="lbl">系统「减少动画」偏好</span>
+      <div class="seg" role="group" aria-label="减少动画">
+        <button type="button" id="rm-off" aria-pressed="true">关</button>
+        <button type="button" id="rm-on" aria-pressed="false">开</button>
+      </div>
+    </div>
+    <div class="ctrl">
+      <span class="lbl">素材展示方式</span>
+      <div class="seg" role="group" aria-label="素材展示方式">
+        <button type="button" data-asset-btn="inline" aria-pressed="true">已交付素材（内联，可离线显示）</button>
+        <button type="button" data-asset-btn="broken" aria-pressed="false">不可加载（演示退化视觉）</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ 手机 ══════════════ -->
+<div class="stage">
+
+  <!-- ─────────── 今天 ─────────── -->
+  <div class="frame-wrap">
+    <div class="frame-cap">今天<span>临时未完成 → 日常未完成 → 已完成折叠区</span></div>
+    <div class="frame-tag">原型示意 · <b>非 Android 实现、非真机截图</b> · 插画为已交付素材的内联副本（assets/art/*.svg）</div>
+    <div class="page-note">
+      <b>大字体档位</b>：1.3–1.59 封面收到 152dp；1.6–1.99 收到 112dp 且封面摘要移出封面；
+      ≥2.0 封面与摘要整块让位。各档都要求<b>首张任务卡完整可见</b>（不是「露一点」）。
+      <br><b>长标题</b>：卡片固定 2 行、末行省略号，不压小字号硬塞一行；完整标题交给 TalkBack 与详情页。
+      <br><b>折叠区数十项</b>：切到该状态会自动展开 37 项折叠区并滚动到它——区域内独立滚动，最大高 60% 视口。
+    </div>
+    <div class="phone" id="phone-today">
+      <div class="status-bar"><span>9:41</span><span class="notch" aria-hidden="true"></span><span>◍ ▮</span></div>
+      <div class="scroll" id="today-scroll">
+
+        <!-- 正常内容（满态 / 计时中 / 大字体 / 长标题 / 图片缺失 共用骨架） -->
+        <div data-today="normal">
+          <div class="ticket">
+            <div>
+              <div class="t-displayM c-ink">2026 年 10 月 5 日</div>
+              <div class="t-headM c-ink2 anchor" style="font-weight:600">周一 · 今天有两件事在等你</div>
+            </div>
+            <button class="ibtn" title="应用时区 Asia/Shanghai" aria-label="应用时区 Asia/Shanghai">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 3 2.6 15 0 18M12 3c-2.6 3-2.6 15 0 18"/></svg>
+            </button>
+          </div>
+
+          <!-- 今日封面：素材路径约定为 assets/art/cover_01_morning.svg -->
+          <div class="cover-block">
+            <div class="cover" id="cover1">
+              <img src="assets/art/cover_01_morning.svg" alt="" onerror="this.closest('.cover').classList.add('missing')">
+              <span class="stamp">10 / 05</span>
+              <div class="scrim" aria-hidden="true"></div>
+              <div class="miss-note">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg>
+                插图暂不可用
+              </div>
+            </div>
+            <!-- 摘要只写一次：小字号时叠在封面遮罩上，大字号时移到封面下方用正文色 -->
+            <div class="cover-say">
+              <span class="kicker">今日封面</span>
+              <span class="say">先把最想做的做完，剩下的交给时间。</span>
+            </div>
+          </div>
+
+          <!-- 计时中：状态卡插在封面与列表之间 -->
+          <div class="runbar" data-only="focusing">
+            <span class="rail" aria-hidden="true"></span>
+            <span class="dot" aria-hidden="true"></span>
+            <span class="rb-main">
+              <span class="t-titleM c-ink ellipsis" style="display:block">微信读书 30 分钟</span>
+              <span class="t-labelM c-ink3">进行中 · 倒计时 · 剩余 10:24</span>
+            </span>
+            <span class="rb-time c-ink">24:36</span>
+            <button class="ibtn" aria-label="回到专注">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+
+          <!-- 大字体下才出现的提示：说明首屏预算变化 -->
+          
+          <!-- 临时任务组 -->
+          <div class="sec-head">
+            <span class="t-headS c-ink">临时任务</span>
+            <span class="cnt">2 项 · 不计入每日刷新</span>
+          </div>
+
+          
+          <button class="tcard running" type="button">
+            <span class="rail" aria-hidden="true"></span>
+            <span class="thumb"><img src="assets/art/task_temporary.svg" alt="" onerror="this.closest('.thumb').classList.add('missing')"></span>
+            <span class="txt">
+              <span class="t-titleM c-ink clamp2" data-long="normal">报名下个月的版画工作坊</span>
+              <span class="meta"><span class="pill tmp">临时</span><span class="pill run">进行中</span></span>
+            </span>
+            <span class="chkbox" role="checkbox" aria-checked="false" aria-label="完成 报名下个月的版画工作坊">
+              <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l5 5L19 7"/></svg></span>
+            </span>
+          </button>
+
+          <!-- 长标题演示：卡片固定 2 行截断，完整名称交给 TalkBack 与详情页 -->
+          <button class="tcard" type="button">
+            <span class="thumb"><img src="assets/art/task_temporary.svg" alt="" onerror="this.closest('.thumb').classList.add('missing')"></span>
+            <span class="txt">
+              <span class="t-titleM c-ink clamp2" data-long="long">整理考研数学错题本</span>
+              <span class="meta"><span class="pill tmp">临时</span><span>有备注</span></span>
+            </span>
+            <span class="chkbox" role="checkbox" aria-checked="false" aria-label="完成 整理考研数学错题本">
+              <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l5 5L19 7"/></svg></span>
+            </span>
+          </button>
+
+          <!-- 日常任务组 -->
+          <div class="sec-head">
+            <span class="t-headS c-ink">日常任务</span>
+            <span class="cnt">3 项 · 已投 1 小时 12 分</span>
+          </div>
+
+          <button class="tcard" type="button">
+            <span class="thumb"><img src="assets/art/task_daily.svg" alt="" onerror="this.closest('.thumb').classList.add('missing')"></span>
+            <span class="txt">
+              <span class="t-titleM c-ink clamp2">背 200 个英语单词</span>
+              <span class="meta"><span class="pill daily">日常</span><span>今天投入 42 分钟</span></span>
+            </span>
+            <span class="chkbox" role="checkbox" aria-checked="false" aria-label="完成 背 200 个英语单词">
+              <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l5 5L19 7"/></svg></span>
+            </span>
+          </button>
+
+          <!-- 图片缺失演示：缩略图加载失败，但卡片尺寸、标题、完成控件位置不变 -->
+          <button class="tcard one-line" type="button">
+            <span class="thumb missing">
+              <img src="assets/art/task_daily.svg" alt="" onerror="this.closest('.thumb').classList.add('missing')">
+            </span>
+            <span class="txt">
+              <span class="t-titleM c-ink clamp2">读一章《设计中的设计》</span>
+              <span class="meta"><span class="pill daily">日常</span><span>缩略图缺失仍可读可操作</span></span>
+            </span>
+            <span class="chkbox" role="checkbox" aria-checked="false" aria-label="完成 读一章《设计中的设计》">
+              <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l5 5L19 7"/></svg></span>
+            </span>
+          </button>
+
+          <!-- 已完成折叠区（满态：3 项） -->
+          <button class="fold" type="button" aria-expanded="false" data-fold="a">
+            <span class="t-headS">已完成 3 项</span>
+            <span class="chev" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></span>
+          </button>
+          <div class="fold-body" data-fold-body="a">
+            <button class="tcard one-line done" type="button">
+              <span class="thumb"><img src="assets/art/state_completed.svg" alt="" onerror="this.closest('.thumb').classList.add('missing')"></span>
+              <span class="txt">
+                <span class="t-titleM clamp2">晨间拉伸</span>
+                <span class="meta"><span class="pill done">已完成</span><span>08:12</span></span>
+              </span>
+              <span class="chkbox" role="checkbox" aria-checked="true" aria-label="撤销完成 晨间拉伸">
+                <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l5 5L19 7"/></svg></span>
+              </span>
+            </button>
+            <button class="tcard one-line done" type="button">
+              <span class="thumb"><img src="assets/art/state_completed.svg" alt="" onerror="this.closest('.thumb').classList.add('missing')"></span>
+              <span class="txt">
+                <span class="t-titleM clamp2">写三行日记</span>
+                <span class="meta"><span class="pill done">已完成</span><span>07:40</span></span>
+              </span>
+              <span class="chkbox" role="checkbox" aria-checked="true" aria-label="撤销完成 写三行日记">
+                <span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l5 5L19 7"/></svg></span>
+              </span>
+            </button>
+            <div class="fold-note">展开后区域内独立滚动，最大高度为视口 60%</div>
+          </div>
+
+          <!-- 折叠区数十项 -->
+          <div data-only="crowded" style="display:none">
+            <button class="fold" type="button" aria-expanded="false" data-fold="b">
+              <span class="t-headS">已完成 37 项</span>
+              <span class="chev" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg></span>
+            </button>
+            <div class="fold-body" data-fold-body="b" style="max-height:300px;overflow:auto">
+              <div class="fold-note">共 37 项，可向上滑动 · 区域内独立滚动，不一次渲染全部</div>
+              <button class="tcard one-line done" type="button">
+                <span class="thumb"><img src="assets/art/state_completed.svg" alt="" onerror="this.closest('.thumb').classList.add('missing')"></span>
+                <span class="txt"><span class="t-titleM clamp2">背 200 个英语单词</span><span class="meta"><span class="pill done">已完成</span><span>10-04</span></span></span>
+                <span class="chkbox" role="checkbox" aria-checked="true" aria-label="撤销完成"><span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l5 5L19 7"/></svg></span></span>
+              </button>
+              <button class="tcard one-line done" type="button">
+                <span class="thumb"><img src="assets/art/state_completed.svg" alt="" onerror="this.closest('.thumb').classList.add('missing')"></span>
+                <span class="txt"><span class="t-titleM clamp2">刷 30 道算法题</span><span class="meta"><span class="pill done">已完成</span><span>10-03</span></span></span>
+                <span class="chkbox" role="checkbox" aria-checked="true" aria-label="撤销完成"><span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l5 5L19 7"/></svg></span></span>
+              </button>
+              <button class="tcard one-line done" type="button">
+                <span class="thumb"><img src="assets/art/state_completed.svg" alt="" onerror="this.closest('.thumb').classList.add('missing')"></span>
+                <span class="txt"><span class="t-titleM clamp2">读文献 1 篇</span><span class="meta"><span class="pill done">已完成</span><span>10-02</span></span></span>
+                <span class="chkbox" role="checkbox" aria-checked="true" aria-label="撤销完成"><span class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l5 5L19 7"/></svg></span></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 空态 -->
+        <div data-today="empty" style="display:none">
+          <div class="ticket">
+            <div>
+              <div class="t-displayM c-ink">2026 年 10 月 5 日</div>
+              <div class="t-headM c-ink2 anchor" style="font-weight:600">周一</div>
+            </div>
+            <button class="ibtn" aria-label="应用时区 Asia/Shanghai">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 3 2.6 15 0 18M12 3c-2.6 3-2.6 15 0 18"/></svg>
+            </button>
+          </div>
+          <div class="panel-in">
+            <div class="art">
+              <svg viewBox="0 0 220 96" fill="none" stroke="var(--ink2)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M30 78h160M52 78l14-52h28L108 78M92 26h52M100 78V44M144 78V44M104 44h36" stroke="var(--ink2)" opacity=".55"/>
+                <rect x="150" y="34" width="46" height="34" rx="3" fill="none" stroke="var(--accent)" stroke-dasharray="6 5"/>
+                <path d="M158 50h30M158 58h18" stroke="var(--accent)" opacity=".8"/>
+              </svg>
+            </div>
+            <div class="t-headL c-ink">今天还是一张空白的纸</div>
+            <div class="t-bodyL c-ink2" style="margin:8px 0 18px">加入第一件事，或者先给自己定一段专注。</div>
+            <button class="btn primary block" type="button">新建第一件事</button>
+            <div class="t-labelM c-ink3" style="margin-top:10px">也可以直接开始一段专注</div>
+          </div>
+          <div class="panel-in" style="border-style:solid;border-color:var(--line);text-align:left;background:var(--card)">
+            <div class="t-headS c-ink" style="margin-bottom:6px">日常任务</div>
+            <div class="t-bodyM c-ink2">日常任务每天 00:00 重新出现，昨天没做的不会堆到今天。</div>
+          </div>
+        </div>
+
+        <!-- 错误态：不显示空态插画，避免把「读不到」说成「没有任务」 -->
+        <div data-today="error" style="display:none">
+          <div class="ticket">
+            <div><div class="t-displayM c-ink">2026 年 10 月 5 日</div><div class="t-headM c-ink2 anchor" style="font-weight:600">周一</div></div>
+          </div>
+          <div class="banner danger" style="display:block;padding:20px 18px;border-radius:24px;border-left-width:4px">
+            <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-top:2px"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+              <span class="t-headS" style="color:var(--danger-ink)">暂时读不到任务</span>
+            </div>
+            <div class="bt">数据仍在设备上，没有丢失。可以重试。</div>
+            <button class="btn primary block" type="button" style="margin-top:14px">重试</button>
+          </div>
+        </div>
+
+        <!-- 异常恢复待确认 -->
+        <div data-today="recovery" style="display:none">
+          <div class="ticket"><div><div class="t-displayM c-ink">2026 年 10 月 5 日</div><div class="t-headM c-ink2 anchor" style="font-weight:600">周一</div></div></div>
+          <div class="banner warn" style="display:block;padding:16px;border-radius:16px">
+            <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-top:2px"><path d="M3 12h4l3 7 4-14 3 7h4"/></svg>
+              <span class="t-headS">上次的计时可能没有正常结束</span>
+            </div>
+            <div class="bt">已确认 <b>18 分 40 秒</b>，另有 <b>6 分 12 秒</b>推算区间需要你确认。</div>
+            <div class="t-labelM" style="margin-top:8px;opacity:.85">未确认的部分不计入投入</div>
+            <div style="display:flex;gap:8px;margin-top:14px">
+              <button class="btn warnb" style="flex:1;min-height:48px" type="button">接受</button>
+              <button class="btn ghost" style="flex:1;min-height:48px;border-color:var(--warn-ink);color:var(--warn-ink)" type="button">修正</button>
+              <button class="btn ghost" style="flex:1;min-height:48px;border-color:var(--warn-ink);color:var(--warn-ink)" type="button">舍弃</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:24px"></div>
+      </div>
+
+      <!-- FAB 在「折叠区数十项」状态下隐藏：该视口演示的是折叠区自身滚动，避免与卡片误触 -->
+      <button class="fab" type="button" aria-label="新建任务" data-hide-on="crowded">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+
+      <nav class="nav" aria-label="主导航">
+        <button type="button" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg>
+          <span class="nl">今天</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2.5v4M16 2.5v4M7.5 13h2M11 13h2M14.5 13h2M7.5 17h2M11 17h2"/></svg>
+          <span class="nl">记录</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 19V9M9.3 19V4M14.7 19v-7M20 19v-4"/><path d="M2.5 21.5h19"/></svg>
+          <span class="nl">洞察</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8l1.2 2.6 2.8-.6 1 2.7 2.6 1.2-1.4 2.5 1.4 2.5-2.6 1.2-1 2.7-2.8-.6L12 21.2l-1.2-2.6-2.8.6-1-2.7-2.6-1.2L5.8 12 4.4 9.5l2.6-1.2 1-2.7 2.8.6z"/></svg>
+          <span class="nl">设置</span>
+        </button>
+      </nav>
+    </div>
+    <div class="states" role="group" aria-label="今天页状态">
+      <button type="button" data-today-state="normal" aria-pressed="true">满态</button>
+      <button type="button" data-today-state="focusing" aria-pressed="false">计时中（暂停同结构）</button>
+      <button type="button" data-today-state="empty" aria-pressed="false">空态</button>
+      <button type="button" data-today-state="crowded" aria-pressed="false">折叠区数十项</button>
+      <button type="button" data-today-state="recovery" aria-pressed="false">异常恢复</button>
+      <button type="button" data-today-state="error" aria-pressed="false">错误态</button>
+      <button type="button" data-today-state="longtitle" aria-pressed="false">长标题</button>
+      <button type="button" data-today-state="largefont" aria-pressed="false">大字体 2.0</button>
+    </div>
+  </div>
+
+  <!-- ─────────── 洞察 ─────────── -->
+  <div class="frame-wrap">
+    <div class="frame-cap">洞察<span>热力图 → 选中详情 → 趋势 → 占比 → 表格替代</span></div>
+    <div class="frame-tag">原型示意 · <b>非 Android 实现、非真机截图</b> · 表格明细为图表的等价替代</div>
+    <div class="page-note">
+      <b>长任务名</b>：图例内最多 2 行，不缩到不可辨识；完整名称与精确时长见「表格明细」。
+    </div>
+    <div class="phone" id="phone-insights">
+      <div class="status-bar"><span>9:41</span><span class="notch" aria-hidden="true"></span><span>◍ ▮</span></div>
+      <div class="scroll" id="ins-scroll">
+
+        <div data-ins="normal">
+          <div class="ticket" style="margin-bottom:6px">
+            <span class="t-displayM c-ink">洞察</span>
+            <span style="display:flex;align-items:center;gap:2px">
+              <button class="ibtn" aria-label="上一年" style="width:48px;padding:12px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+              </button>
+              <span class="t-titleM c-ink" style="min-width:52px;text-align:center">2026</span>
+              <button class="ibtn" aria-label="下一年" style="width:48px;padding:12px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+              </button>
+            </span>
+          </div>
+
+          <!-- 标题插画：约定路径 assets/art/chart_heatmap.svg -->
+          <div class="cover" id="cover2" style="height:104px;border-radius:24px">
+            <img src="assets/art/chart_heatmap.svg" alt="" onerror="this.closest('.cover').classList.add('missing')">
+            <div class="miss-note">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 8v5M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg>
+              插图暂不可用
+            </div>
+          </div>
+
+          <div class="hm-wrap">
+            <div class="hm-months" id="hm-months" aria-hidden="true"></div>
+            <div class="hm-scroll">
+              <div class="hm-grid" id="hm-grid" role="grid" aria-label="全年投入热力图"></div>
+            </div>
+            <div class="hm-fade" aria-hidden="true"></div>
+          </div>
+
+          <!-- 长标题演示条：放在热力图之前，确保切换状态后一定在可视区内 -->
+          
+          <!-- 图例由 buildLegend() 生成：与记录页共用同一套色阶定义 -->
+          <div class="legend" id="legend-insights"></div>
+          <div class="t-labelM c-ink3" style="margin-top:6px;font-weight:400">
+            颜色只作辅助：无记录用虚线轮廓、零值用实心浅格区分；每格都能查到精确值，另有表格明细。
+          </div>
+
+          <!-- 选中格详情 -->
+          <div class="sel-card">
+            <div class="t-headS c-ink" id="sel-date">2026 年 3 月 4 日 周三</div>
+            <div class="big c-ink" id="sel-val">1:32:36</div>
+            <div class="t-bodyM c-ink2" id="sel-sub">投入 92 分钟 · 3 个任务 · 有 1 项日常完成</div>
+            <button class="btn ghost sm" type="button" style="margin-top:12px">查看当日明细</button>
+          </div>
+
+          <div class="sec-head"><span class="t-headS c-ink">趋势</span><span class="cnt">按日期标签聚合</span></div>
+          <div class="seg2" role="group" aria-label="趋势范围">
+            <button type="button" aria-pressed="true">按周</button>
+            <button type="button" aria-pressed="false">按月</button>
+          </div>
+          <div style="background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px">
+            <svg viewBox="0 0 300 150" width="100%" height="150" role="img" aria-label="近 8 周投入趋势：峰值在第 5 周 6 小时 40 分，均值 3 小时 12 分">
+              <g stroke="var(--line)" stroke-width="1">
+                <line x1="30" y1="20" x2="292" y2="20"/><line x1="30" y1="58" x2="292" y2="58"/>
+                <line x1="30" y1="96" x2="292" y2="96"/><line x1="30" y1="130" x2="292" y2="130"/>
+              </g>
+              <g fill="var(--ink3)" font-size="9" font-weight="600">
+                <text x="2" y="23">7h</text><text x="2" y="61">5h</text><text x="2" y="99">2.5h</text><text x="2" y="133">0</text>
+              </g>
+              <polyline points="30,112 67,96 104,74 141,88 178,30 215,58 252,70 292,50"
+                        fill="none" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+              <g fill="var(--card)" stroke="var(--accent)" stroke-width="2.4">
+                <circle cx="30" cy="112" r="3.6"/><circle cx="67" cy="96" r="3.6"/><circle cx="104" cy="74" r="3.6"/>
+                <circle cx="141" cy="88" r="3.6"/><circle cx="178" cy="30" r="4.6"/>
+                <circle cx="215" cy="58" r="3.6"/><circle cx="252" cy="70" r="3.6"/><circle cx="292" cy="50" r="3.6"/>
+              </g>
+              <text x="178" y="22" font-size="10" font-weight="700" fill="var(--ink)" text-anchor="middle">6h40m</text>
+              <g fill="var(--ink3)" font-size="9" font-weight="600" text-anchor="middle">
+                <text x="30" y="146">W34</text><text x="104" y="146">W36</text><text x="178" y="146">W38</text><text x="252" y="146">W40</text>
+              </g>
+              <line x1="30" y1="88" x2="292" y2="88" stroke="var(--ink3)" stroke-width="1.2" stroke-dasharray="5 4"/>
+              <text x="292" y="84" font-size="9" font-weight="700" fill="var(--ink3)" text-anchor="end">均值 3h12m</text>
+            </svg>
+            <div class="t-labelM c-ink3" style="margin-top:6px;font-weight:400">
+              峰值与均值直接标注在图上，不依赖悬停；精确值见下方表格。
+            </div>
+          </div>
+
+          <div class="sec-head"><span class="t-headS c-ink">按任务占比</span><span class="cnt">前 5 名 + 其他</span></div>
+          <div style="background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px">
+            <div class="donut-row">
+              <div class="donut">
+                <svg viewBox="0 0 42 42" width="150" height="150" role="img" aria-label="任务投入占比环形图，微信读书 42%，刷算法题 26%，英语单词 18%，读文献 9%，其他 5%">
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--tint)" stroke-width="6"/>
+                  <!-- 每段除颜色外还带线型差异：实线 / 虚线 -->
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--s1)" stroke-width="6"
+                          stroke-dasharray="42 58" stroke-dashoffset="25"/>
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--s2)" stroke-width="6"
+                          stroke-dasharray="4 2.4" stroke-dashoffset="-17"/>
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--s3)" stroke-width="6"
+                          stroke-dasharray="18 82" stroke-dashoffset="-43"/>
+                  <!-- 顶点形状差异：用短直线段做出可辨识的分段端点 -->
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--s4)" stroke-width="6"
+                          stroke-dasharray="9 91" stroke-dashoffset="-61"/>
+                  <circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--s5)" stroke-width="6"
+                          stroke-dasharray="2 1.4" stroke-dashoffset="-70"/>
+                </svg>
+                <div class="ctr">
+                  <div>
+                    <div style="font-size:calc(22px * var(--fs));font-weight:700" class="c-ink">7h 20m</div>
+                    <div class="t-labelM c-ink3">本周合计</div>
+                  </div>
+                </div>
+              </div>
+              <div class="legend-list">
+                <div class="ll-row"><span class="m" style="background:var(--s1)"></span><span class="nm c-ink ellipsis">微信读书 30 分钟</span><span class="vv">3h05m · 42%</span></div>
+                <div class="ll-row"><span class="m" style="background:var(--s2)"></span><span class="nm c-ink ellipsis">刷 30 道算法题</span><span class="vv">1h54m · 26%</span></div>
+                <div class="ll-row"><span class="m" style="background:var(--s3)"></span><span class="nm c-ink ellipsis">背 200 个英语单词</span><span class="vv">1h19m · 18%</span></div>
+                <div class="ll-row"><span class="m" style="background:var(--s4)"></span><span class="nm c-ink ellipsis">读文献 1 篇</span><span class="vv">40m · 9%</span></div>
+                <div class="ll-row"><span class="m" style="background:var(--s5)"></span><span class="nm c-ink ellipsis">其他（2 项）</span><span class="vv">22m · 5%</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sec-head"><span class="t-headS c-ink">表格明细</span><span class="cnt">图表的等价替代</span></div>
+          <table class="tbl">
+            <caption>本周逐任务投入（精确值，色盲与读屏用户可只读此表）</caption>
+            <thead><tr><th scope="col">任务</th><th scope="col">本周</th><th scope="col">占比</th></tr></thead>
+            <tbody>
+              <tr><td class="c-ink">微信读书 30 分钟</td><td class="num">3h 05m</td><td class="num">42%</td></tr>
+              <tr><td class="c-ink">刷 30 道算法题</td><td class="num">1h 54m</td><td class="num">26%</td></tr>
+              <tr><td class="c-ink">背 200 个英语单词</td><td class="num">1h 19m</td><td class="num">18%</td></tr>
+              <tr><td class="c-ink">读文献 1 篇</td><td class="num">40m</td><td class="num">9%</td></tr>
+              <tr><td class="c-ink">其他（2 项）</td><td class="num">22m</td><td class="num">5%</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 空态：不画空矩阵，避免被读成「全是零投入」 -->
+        <div data-ins="empty" style="display:none">
+          <div class="ticket" style="margin-bottom:6px"><span class="t-displayM c-ink">洞察</span></div>
+          <div class="panel-in">
+            <div class="art">
+              <svg viewBox="0 0 220 96" fill="none" stroke="var(--ink2)" stroke-width="2.2" stroke-linecap="round">
+                <rect x="30" y="12" width="160" height="70" rx="4" stroke-dasharray="6 5" opacity=".7"/>
+                <path d="M30 60h160M30 38h160M76 12v70M124 12v70" opacity=".45"/>
+              </svg>
+            </div>
+            <div class="t-headL c-ink">还没有可以统计的投入</div>
+            <div class="t-bodyL c-ink2" style="margin:8px 0 18px">完成一次专注，或者补记一段时间，这里就会出现你的节奏。</div>
+            <button class="btn primary block" type="button">去今天页</button>
+          </div>
+          <div class="t-bodyM c-ink3" style="text-align:center">
+            零统计时不渲染空的矩阵——空矩阵会被误读为「一整年都是零投入」。
+          </div>
+        </div>
+
+        <!-- 错误态 -->
+        <div data-ins="error" style="display:none">
+          <div class="ticket" style="margin-bottom:6px"><span class="t-displayM c-ink">洞察</span></div>
+          <div class="banner danger" style="display:block;padding:20px 18px;border-radius:24px;border-left-width:4px">
+            <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-top:2px"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+              <span class="t-headS" style="color:var(--danger-ink)">统计暂时无法计算</span>
+            </div>
+            <div class="bt">账本数据仍在设备上。可以重试。</div>
+            <button class="btn primary block" type="button" style="margin-top:14px">重试</button>
+          </div>
+        </div>
+
+        <!-- 数据质量警告 -->
+        <div data-ins="warn" style="display:none">
+          <div class="ticket" style="margin-bottom:6px"><span class="t-displayM c-ink">洞察</span></div>
+          <div class="banner warn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+            <span class="bt">有日期总投入超过自然日长度，逐日检查请见表格明细。<br><span style="font-weight:700">这是非阻断提示，不改动你的数据。</span></span>
+          </div>
+        </div>
+
+        <div style="height:24px"></div>
+      </div>
+
+      <nav class="nav" aria-label="主导航">
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg>
+          <span class="nl">今天</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2.5v4M16 2.5v4M7.5 13h2M11 13h2M14.5 13h2M7.5 17h2M11 17h2"/></svg>
+          <span class="nl">记录</span>
+        </button>
+        <button type="button" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 19V9M9.3 19V4M14.7 19v-7M20 19v-4"/><path d="M2.5 21.5h19"/></svg>
+          <span class="nl">洞察</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8l1.2 2.6 2.8-.6 1 2.7 2.6 1.2-1.4 2.5 1.4 2.5-2.6 1.2-1 2.7-2.8-.6L12 21.2l-1.2-2.6-2.8.6-1-2.7-2.6-1.2L5.8 12 4.4 9.5l2.6-1.2 1-2.7 2.8.6z"/></svg>
+          <span class="nl">设置</span>
+        </button>
+      </nav>
+    </div>
+    <div class="states" role="group" aria-label="洞察页状态">
+      <button type="button" data-ins-state="normal" aria-pressed="true">满态</button>
+      <button type="button" data-ins-state="empty" aria-pressed="false">空态（零统计）</button>
+      <button type="button" data-ins-state="warn" aria-pressed="false">数据质量警告</button>
+      <button type="button" data-ins-state="error" aria-pressed="false">错误态</button>
+      <button type="button" data-ins-state="longtitle" aria-pressed="false">长标题</button>
+      <button type="button" data-ins-state="largefont" aria-pressed="false">大字体 2.0</button>
+    </div>
+  </div>
+
+  <!-- ─────────── 专注 ─────────── -->
+  <div class="frame-wrap">
+    <div class="frame-cap">专注<span>模式选择 → 运行/暂停 → 到点结果 → 跨日完成</span></div>
+    <div class="frame-tag">原型示意 · <b>非 Android 实现、非真机截图</b></div>
+    <div class="page-note">
+      <b>选择模式不启动计时</b>：「开始」在点按前绝不建立会话；分钟数按任务记忆（新任务默认 25），
+      只在点「开始」后才写回；只改输入后取消不覆盖已有默认值。上限 24 小时。
+      <br><b>暂停</b>时数字停止累加（不继续计数），按钮文案变「继续」。
+      <br><b>同一时间只允许一个活动会话</b>：切换到别的任务前先确认「结束当前的…并开始新任务？」；
+      暂停中的旧会话也按同一规则处理。
+    </div>
+    <div class="phone" id="phone-focus">
+      <div class="status-bar"><span>9:41</span><span class="notch" aria-hidden="true"></span><span>◍ ▮</span></div>
+      <div class="scroll" id="focus-scroll">
+
+        <!-- 模式选择 -->
+        <div data-focus="select">
+          <div class="ticket" style="margin-bottom:8px">
+            <button class="ibtn" aria-label="返回" style="margin-left:-12px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
+            <span class="t-labelM c-ink2" style="align-self:center">任务详情</span>
+          </div>
+          <div class="t-titleL c-ink clamp3">微信读书 30 分钟</div>
+          <div class="t-bodyL c-ink2" style="margin-top:8px">读完第四章，把两处论证誊到笔记里。</div>
+
+          <div class="sec-head" style="margin-top:24px"><span class="t-headS c-ink">选择计时方式</span></div>
+
+          <div class="mode-card" role="radio" aria-checked="false" tabindex="0" data-mode="forward">
+            <span class="mc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M9 3h6"/></svg></span>
+            <span class="mc-txt">
+              <span class="t-headS c-ink">正向计时</span>
+              <span class="t-bodyM c-ink2">从此刻开始累计，不设终点</span>
+            </span>
+          </div>
+
+          <div class="mode-card" role="radio" aria-checked="true" tabindex="0" data-mode="countdown">
+            <span class="mc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M12 21a8 8 0 100-16 8 8 0 000 16z"/><path d="M12 8v5h3M4 4l2 2"/></svg></span>
+            <span class="mc-txt">
+              <span class="t-headS c-ink">倒计时</span>
+              <span class="t-bodyM c-ink2">到点后由你决定休息或继续</span>
+            </span>
+            <!-- 用 div 而不是 span：span 不能包含 button，HTML 解析器会提前闭合它，
+                 导致步进器逸出卡片（这是实测到的渲染缺陷，已修） -->
+            <div class="mc-min">
+              <div class="mm-label">分钟</div>
+              <div class="mm-row">
+                <button class="ibtn" type="button" aria-label="减少一分钟" data-step="-1" style="width:48px">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12h14"/></svg>
+                </button>
+                <span class="mm-val" id="mm-val">25</span>
+                <button class="ibtn" type="button" aria-label="增加一分钟" data-step="1" style="width:48px">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+              </div>
+              <div class="mm-quick">
+                <button type="button" aria-pressed="false">15</button>
+                <button type="button" aria-pressed="true">25</button>
+                <button type="button" aria-pressed="false">45</button>
+                <button type="button" aria-pressed="false">60</button>
+              </div>
+            </div>
+          </div>
+
+                    <!-- 「开始」操作条已移到 phone 层（见 #focus-action-bar） -->
+        </div>
+
+        <!-- 运行中 -->
+        <div data-focus="running" style="display:none">
+          <div class="ticket" style="margin-bottom:0">
+            <button class="ibtn" aria-label="收起" style="margin-left:-12px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+          <div style="text-align:center;margin-top:24px">
+            <div class="t-labelM c-ink2">倒计时 · 目标 25 分钟</div>
+            <div class="t-titleL c-ink clamp2" style="margin:8px 0 0">微信读书 30 分钟</div>
+            <div class="focus-big" id="focus-big">24:36</div>
+            <div class="ladder-badge" id="ladder-badge">计时数字档位：52sp</div>
+            <div class="t-bodyM c-ink2">剩余 10:24</div>
+            <div class="focus-ring" aria-hidden="true">
+              <svg viewBox="0 0 120 120" width="200" height="200">
+                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--tint)" stroke-width="6"/>
+                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--running)" stroke-width="6"
+                        stroke-linecap="round" stroke-dasharray="137 327" transform="rotate(-90 60 60)"/>
+              </svg>
+            </div>
+            <div class="focus-ctl">
+              <button class="cbtn run" type="button" aria-label="暂停计时">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 6v12M15 6v12"/></svg>
+              </button>
+              <button class="cbtn" type="button" aria-label="结束本次专注">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+              </button>
+            </div>
+            <div class="t-labelM c-ink3" style="margin-top:14px">结束会立即保存实际投入，不需要达成 25 分钟</div>
+          </div>
+        </div>
+
+        <!-- 暂停 -->
+        <div data-focus="paused" style="display:none">
+          <div class="ticket" style="margin-bottom:0">
+            <button class="ibtn" aria-label="收起" style="margin-left:-12px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+            </button>
+          </div>
+          <div style="text-align:center;margin-top:24px">
+            <div class="t-labelM c-ink2">倒计时 · 目标 25 分钟</div>
+            <div class="t-titleL c-ink clamp2" style="margin:8px 0 0">微信读书 30 分钟</div>
+            <div class="focus-big paused" data-ladder>24:36</div>
+            <div class="ladder-badge" data-ladder-badge>计时数字档位：52sp</div>
+            <div class="t-bodyM c-ink2">已暂停 · 剩余 10:24</div>
+            <div class="focus-ring" aria-hidden="true">
+              <svg viewBox="0 0 120 120" width="200" height="200">
+                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--tint)" stroke-width="6"/>
+                <circle cx="60" cy="60" r="52" fill="none" stroke="var(--ink3)" stroke-width="6"
+                        stroke-linecap="round" stroke-dasharray="137 327" transform="rotate(-90 60 60)"/>
+              </svg>
+            </div>
+            <div class="focus-ctl">
+              <button class="cbtn run" type="button" aria-label="继续计时">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5.5l11 6.5-11 6.5z"/></svg>
+              </button>
+              <button class="cbtn" type="button" aria-label="结束本次专注">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+              </button>
+            </div>
+            <div class="t-labelM c-ink3" style="margin-top:14px">暂停期间不计入投入；数字已停止累加</div>
+          </div>
+        </div>
+
+        <!-- 到点结果 -->
+        <div data-focus="done" style="display:none">
+          <div style="text-align:center;margin-top:52px">
+            <div class="t-labelM c-ink2">倒计时结束</div>
+            <div class="t-headM c-ink" style="margin-top:10px">这一段结束了</div>
+            <div class="t-displayXL c-ink" style="margin-top:18px">25:00</div>
+            <div class="t-bodyM c-ink2">有效投入 25 分 0 秒 · 微信读书 30 分钟</div>
+            <div class="result-ctl">
+              <button class="btn ghost" type="button" style="flex:1">休息</button>
+              <button class="btn primary" type="button" style="flex:1">继续专注</button>
+            </div>
+            <div class="t-bodyM c-ink2" style="margin-top:16px;text-align:left;background:var(--tint);border-radius:12px;padding:12px">
+              <b>「休息」</b>只返回非计时状态，<b>不</b>启动休息倒计时。<br>
+              <b>「继续专注」</b>进入下一段的模式确认页，还需再点一次「开始」。<br>
+              到点<b>不会</b>自动勾选任务完成。
+            </div>
+          </div>
+        </div>
+
+        <!-- 跨日完成 -->
+        <div data-focus="midnight" style="display:none">
+          <div style="margin-top:32px">
+            <div class="t-headM c-ink">这一次投入跨了两天</div>
+            <div class="t-bodyL c-ink2" style="margin-top:8px">今天完成的应该是哪一天？</div>
+            <button class="day-opt primary" type="button" aria-pressed="true">
+              <span class="t-titleM">2026 年 10 月 5 日 周一</span>
+              <span class="t-labelM" style="opacity:.85">今天（默认）</span>
+            </button>
+            <button class="day-opt" type="button" aria-pressed="false">
+              <span class="t-titleM">2026 年 10 月 4 日 周日</span>
+              <span class="t-labelM c-ink3">昨天</span>
+            </button>
+            <div class="t-bodyM c-ink2" style="margin-top:14px;background:var(--tint);border-radius:12px;padding:12px">
+              投入时间按实际发生的时刻分归两天（23:50–00:20 拆成 10 分 + 20 分），
+              与你选择哪一天完成是<b>两件事</b>。一次操作不会同时完成两天。
+            </div>
+            <button class="btn primary block" type="button" style="margin-top:16px">就选这天</button>
+          </div>
+        </div>
+
+        <!-- 切换任务确认 -->
+        <div data-focus="switch" style="display:none">
+          <div style="margin-top:32px">
+            <div class="t-headM c-ink">结束当前的「微信读书」并开始新任务？</div>
+            <div class="t-bodyL c-ink2" style="margin-top:10px">
+              当前已投入 <b>18 分 40 秒</b>会被保存，然后开始「背 200 个英语单词」。
+            </div>
+                        <div style="display:flex;gap:12px;margin-top:20px">
+              <button class="btn ghost" type="button" style="flex:1">取消</button>
+              <button class="btn primary" type="button" style="flex:1.4">结束并开始</button>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:24px"></div>
+      </div>
+      <div class="action-bar" id="focus-action-bar">
+        <div class="hint" id="start-hint">倒计时 · 25 分钟 · 点「开始」后才会建立计时</div>
+        <button class="btn primary block" type="button" id="btn-start">开始</button>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <button type="button" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg>
+          <span class="nl">今天</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2.5v4M16 2.5v4M7.5 13h2M11 13h2M14.5 13h2M7.5 17h2M11 17h2"/></svg>
+          <span class="nl">记录</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 19V9M9.3 19V4M14.7 19v-7M20 19v-4"/><path d="M2.5 21.5h19"/></svg>
+          <span class="nl">洞察</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8l1.2 2.6 2.8-.6 1 2.7 2.6 1.2-1.4 2.5 1.4 2.5-2.6 1.2-1 2.7-2.8-.6L12 21.2l-1.2-2.6-2.8.6-1-2.7-2.6-1.2L5.8 12 4.4 9.5l2.6-1.2 1-2.7 2.8.6z"/></svg>
+          <span class="nl">设置</span>
+        </button>
+      </nav>
+    </div>
+    <div class="states" role="group" aria-label="专注页状态">
+      <button type="button" data-focus-state="select" aria-pressed="true">模式选择</button>
+      <button type="button" data-focus-state="running" aria-pressed="false">运行中</button>
+      <button type="button" data-focus-state="paused" aria-pressed="false">已暂停</button>
+      <button type="button" data-focus-state="done" aria-pressed="false">到点结果</button>
+      <button type="button" data-focus-state="midnight" aria-pressed="false">跨日完成</button>
+      <button type="button" data-focus-state="switch" aria-pressed="false">切换任务确认</button>
+      <button type="button" data-focus-state="largefont" aria-pressed="false">大字体 2.0（模式选择）</button>
+      <button type="button" data-focus-state="running-large" aria-pressed="false">运行中 + 大字体 2.0</button>
+    </div>
+  </div>
+
+  <!-- ─────────── 记录 ─────────── -->
+  <div class="frame-wrap">
+    <div class="frame-cap">记录<span>日历 → 当日总投入 → 明细（来源与完成分离）</span></div>
+    <div class="frame-tag">原型示意 · <b>非 Android 实现、非真机截图</b> · 日期数字落在格外的纯色上（见页脚说明）</div>
+    <div class="phone" id="phone-records">
+      <div class="status-bar"><span>9:41</span><span class="notch" aria-hidden="true"></span><span>◍ ▮</span></div>
+      <div class="scroll" id="records-scroll">
+
+        <div data-rec="normal">
+          <div class="rec-month">
+            <button class="ibtn" aria-label="上一个月">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+            </button>
+            <span class="t-headS c-ink">2026 年 10 月</span>
+            <button class="ibtn" aria-label="下一个月">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+          <div class="cal" id="cal-grid" role="grid" aria-label="2026 年 10 月日期与投入"></div>
+
+          <!-- 图例由 buildLegend() 生成：与洞察页共用同一套色阶定义，避免两页各写一份而分叉 -->
+          <div class="legend" id="legend-records" style="margin-top:10px"></div>
+          <div class="t-labelM c-ink3" style="margin-top:6px;font-weight:400">
+            「投入」与「完成」是两个维度：色块表示当天投入档位，右上角圆点表示当天有日常完成。
+          </div>
+
+          <div class="sel-card" style="margin-top:14px">
+            <div class="t-headS c-ink">2026 年 10 月 5 日 周一</div>
+            <div class="big c-ink">1:12:36</div>
+            <div class="t-bodyM c-ink2">当日总投入 · 4 个任务 · 12 段记录 · 有 2 项日常完成</div>
+          </div>
+
+          <div class="sec-head"><span class="t-headS c-ink">明细</span><span class="cnt">按任务分组 · 稳定提交顺序</span></div>
+
+          <div class="det-group">
+            <div class="det-h"><span class="t-titleM c-ink">微信读书 30 分钟</span><span class="t-bodyM c-ink2">合计 24 分 36 秒</span></div>
+            <div class="det-row"><span class="t-bodyM c-ink3">自动计时 · 09:12</span><span class="t-bodyM c-ink">24:36</span><span class="pill daily">自动</span></div>
+          </div>
+          <div class="det-group">
+            <div class="det-h"><span class="t-titleM c-ink">背 200 个英语单词</span><span class="t-bodyM c-ink2">合计 33 分 0 秒</span></div>
+            <div class="det-row"><span class="t-bodyM c-ink3">手动增加</span><span class="t-bodyM c-ink">15:00</span><span class="pill tmp">手动</span></div>
+            <div class="det-row"><span class="t-bodyM c-ink3">设为当日总量</span><span class="t-bodyM c-ink">33:00</span><span class="pill tmp">修正</span></div>
+          </div>
+          <div class="det-group">
+            <div class="det-h"><span class="t-titleM c-ink">读文献 1 篇</span><span class="t-bodyM c-ink2">合计 15 分 0 秒</span></div>
+            <div class="det-row"><span class="t-bodyM c-ink3">自动计时（跨日拆分）· 00:10</span><span class="t-bodyM c-ink">15:00</span><span class="pill daily">跨日</span></div>
+          </div>
+          <div class="t-labelM c-ink3" style="margin-top:10px;font-weight:400">
+            历史明细按<b>当时的标题版本</b>呈现；当前名称另起一行标注，不覆盖旧名。
+          </div>
+          <div style="height:100px"></div>
+        </div>
+
+        <!-- 空态（当月无记录） -->
+        <div data-rec="empty" style="display:none">
+          <div class="rec-month">
+            <button class="ibtn" aria-label="上一个月"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <span class="t-headS c-ink">2026 年 10 月</span>
+            <button class="ibtn" aria-label="下一个月"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+          </div>
+          <div class="cal" id="cal-grid-empty" role="grid" aria-label="2026 年 10 月，本月无记录"></div>
+          <div class="panel-in">
+            <div class="art-panel" style="margin-bottom:14px">
+              <img id="empty-rec-art" src="assets/art/empty_records.svg" alt="">
+            </div>
+            <div class="t-headL c-ink">这个月还没有记录</div>
+            <div class="t-bodyL c-ink2" style="margin:8px 0 16px">开始一段专注，或者补记已经投入的时间。</div>
+            <button class="btn ghost block" type="button">补记投入</button>
+          </div>
+          <div class="t-labelM c-ink3" style="font-weight:400">
+            月历结构不因空数据消失（它是页面身份）；空态插画用 panel 帧，与容器同为 328×160dp 契约。
+          </div>
+        </div>
+
+        <!-- 选中日期为空 -->
+        <div data-rec="dayempty" style="display:none">
+          <div class="rec-month">
+            <button class="ibtn" aria-label="上一个月"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
+            <span class="t-headS c-ink">2026 年 10 月</span>
+            <button class="ibtn" aria-label="下一个月"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg></button>
+          </div>
+          <div class="cal" id="cal-grid-dayempty" role="grid"></div>
+          <div class="sel-card" style="margin-top:14px">
+            <div class="t-headS c-ink">2026 年 10 月 4 日 周日</div>
+            <div class="t-bodyM c-ink2" style="margin-top:6px">这天没有记录。可以补记一段投入。</div>
+            <button class="btn ghost sm" type="button" style="margin-top:12px">为这天补记</button>
+          </div>
+          <div class="t-labelM c-ink3" style="font-weight:400">
+            单日为空**不**显示整月空态的大插画——那是「整月无记录」才用的层级。
+          </div>
+        </div>
+
+        <!-- 补记抽屉 -->
+        <div data-rec="sheet" style="display:none">
+          <div class="t-headS c-ink" style="margin-top:20px">补记投入</div>
+          <button class="row" type="button" style="border-radius:12px;border-bottom:0;margin-top:12px;border:1px solid var(--line)">
+            <span class="rl">任务</span><span class="rv">背 200 个英语单词 ›</span>
+          </button>
+          <button class="row" type="button" style="border-radius:12px;border-bottom:0;margin-top:8px;border:1px solid var(--line)">
+            <span class="rl">日期</span><span class="rv">2026 年 10 月 5 日 ›</span>
+          </button>
+          <div style="margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px">
+            <div class="t-labelM c-ink2">模式</div>
+            <div class="seg2" style="margin-top:8px">
+              <button type="button" aria-pressed="true">增加投入</button>
+              <button type="button" aria-pressed="false">设为当日总量</button>
+            </div>
+            <div class="t-labelM c-ink2" style="margin-top:12px">时长（分钟）</div>
+            <div class="input-like">15</div>
+            <div class="t-bodyM c-ink2" style="margin-top:12px">
+              当前 <b>18 分</b> → 操作后 <b>33 分</b>
+            </div>
+            <div class="t-bodyM c-ink2" style="margin-top:8px;opacity:.9">
+              无法自动判断这段是否与已有记录重叠，请自行确认。
+            </div>
+          </div>
+          <div class="t-bodyM c-ink2" style="margin-top:12px;background:var(--tint);border-radius:12px;padding:12px">
+            切换「设为当日总量」后，预览改为 <b>33 分 → 45 分</b>，并注明后续新增投入会在该值之上继续累加。
+            不询问「几点到几点」，不伪造开始/结束时刻。
+          </div>
+          <div style="display:flex;gap:12px;margin-top:16px">
+            <button class="btn ghost" type="button" style="flex:1">取消</button>
+            <button class="btn primary" type="button" style="flex:1.3">添加</button>
+          </div>
+        </div>
+
+        <!-- 删除确认 -->
+        <div data-rec="del" style="display:none">
+          <div style="margin-top:32px">
+            <div class="t-headM c-ink">删除这条记录？</div>
+            <div class="t-bodyL c-ink2" style="margin-top:10px">
+              将影响 <b>2026 年 10 月 5 日</b>的总计：<b>1 小时 12 分 → 48 分</b>。
+              原始自动记录仍保留在审计数据中。
+            </div>
+            <div class="banner warn" style="margin-top:14px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+              <span class="bt">该日有一条<b>总量修正</b>（1 小时 30 分）。删除后总计将按修正值显示——修正事件仍被尊重。</span>
+            </div>
+            <div style="display:flex;gap:12px;margin-top:20px">
+              <button class="btn ghost" type="button" style="flex:1">取消</button>
+              <button class="btn danger" type="button" style="flex:1.3">删除</button>
+            </div>
+            <div class="t-labelM c-ink3" style="margin-top:14px">删除后 Snackbar「已删除 1 条记录」+「撤销」保留 8 秒</div>
+          </div>
+        </div>
+
+        <!-- 数据质量警告 -->
+        <div data-rec="warn" style="display:none">
+          <div class="rec-month">
+            <span class="t-headS c-ink">2026 年 10 月</span>
+          </div>
+          <div class="banner warn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+            <span class="bt">10 月 5 日总投入 <b>25 小时 10 分</b>，超过自然日长度，请检查原记录。<br>
+              这是<b>非阻断</b>提示：数据不改动，可以继续编辑。</span>
+          </div>
+          <div class="sel-card" style="border-left-color:var(--warn-ink)">
+            <div class="t-headS c-ink">2026 年 10 月 5 日 周一</div>
+            <div class="big c-ink">25:10:00</div>
+            <div class="t-bodyM c-ink2">超过自然日长度 · 12 段记录</div>
+          </div>
+        </div>
+
+        <!-- 错误态 -->
+        <div data-rec="error" style="display:none">
+          <div class="t-headS c-ink" style="margin-top:20px">记录</div>
+          <div class="banner danger" style="display:block;padding:20px 18px;border-radius:24px;border-left-width:4px;margin-top:14px">
+            <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="margin-top:2px"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+              <span class="t-headS" style="color:var(--danger-ink)">读不到记录</span>
+            </div>
+            <div class="bt">数据仍在设备上。可以重试。</div>
+            <button class="btn primary block" type="button" style="margin-top:14px">重试</button>
+          </div>
+        </div>
+
+        <div style="height:24px"></div>
+      </div>
+      <!-- 记录页用底部操作条而不是悬浮 FAB：悬浮按钮会永久压住可滚动正文
+           （实测与「当日总投入 · …」重叠 41x28、补记抽屉内 56x51、大字体下 56x56 整块盖住）。
+           操作条占满一整行，结构上不可能与正文重叠。 -->
+      <div class="action-bar" id="records-action-bar">
+        <button class="btn primary block" type="button" aria-label="补记投入">补记投入</button>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg>
+          <span class="nl">今天</span>
+        </button>
+        <button type="button" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2.5v4M16 2.5v4M7.5 13h2M11 13h2M14.5 13h2M7.5 17h2M11 17h2"/></svg>
+          <span class="nl">记录</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 19V9M9.3 19V4M14.7 19v-7M20 19v-4"/><path d="M2.5 21.5h19"/></svg>
+          <span class="nl">洞察</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8l1.2 2.6 2.8-.6 1 2.7 2.6 1.2-1.4 2.5 1.4 2.5-2.6 1.2-1 2.7-2.8-.6L12 21.2l-1.2-2.6-2.8.6-1-2.7-2.6-1.2L5.8 12 4.4 9.5l2.6-1.2 1-2.7 2.8.6z"/></svg>
+          <span class="nl">设置</span>
+        </button>
+      </nav>
+    </div>
+    <div class="states" role="group" aria-label="记录页状态">
+      <button type="button" data-rec-state="normal" aria-pressed="true">满态</button>
+      <button type="button" data-rec-state="empty" aria-pressed="false">空态（当月无记录）</button>
+      <button type="button" data-rec-state="dayempty" aria-pressed="false">选中日期为空</button>
+      <button type="button" data-rec-state="sheet" aria-pressed="false">补记 / 设为总量</button>
+      <button type="button" data-rec-state="del" aria-pressed="false">删除确认</button>
+      <button type="button" data-rec-state="warn" aria-pressed="false">数据质量警告</button>
+      <button type="button" data-rec-state="error" aria-pressed="false">错误态</button>
+      <button type="button" data-rec-state="largefont" aria-pressed="false">大字体 2.0</button>
+    </div>
+  </div>
+
+  <!-- ─────────── 设置 ─────────── -->
+  <div class="frame-wrap">
+    <div class="frame-cap">设置<span>提醒 → 日期时区 → 备份 → 归档</span></div>
+    <div class="frame-tag">原型示意 · <b>非 Android 实现、非真机截图</b> · 数据风险语境不使用插画</div>
+    <div class="phone" id="phone-settings">
+      <div class="status-bar"><span>9:41</span><span class="notch" aria-hidden="true"></span><span>◍ ▮</span></div>
+      <div class="scroll" id="settings-scroll">
+
+        <div data-set="normal">
+          <div class="t-displayM c-ink" style="margin:12px 0 20px">设置</div>
+
+          <div class="t-headS c-ink">专注提醒</div>
+          <div style="margin-top:8px">
+            <div class="row"><span class="rl">到点震动</span><span class="sw" role="switch" aria-checked="true" tabindex="0"><i></i></span></div>
+            <div class="row"><span class="rl">到点声音</span><span class="sw" role="switch" aria-checked="false" tabindex="0"><i></i></span></div>
+            <button class="row" type="button">
+              <span class="rl">通知权限</span>
+              <span class="rnote c-danger" style="font-weight:600">已拒绝</span>
+              <span class="rv">去设置</span>
+            </button>
+          </div>
+          <div class="t-bodyM c-ink2" style="margin-top:8px">
+            权限被拒时到点提醒可能不会响；计时仍会在应用内正常结束。不会重复弹窗诱导授权。
+          </div>
+
+          <div class="t-headS c-ink" style="margin-top:26px">日期与时区</div>
+          <div style="margin-top:8px">
+            <button class="row" type="button"><span class="rl">应用时区</span><span class="rv">Asia/Shanghai ›</span></button>
+            <button class="row" type="button"><span class="rl c-warn">变更时区</span><span class="rv">会影响之后的新记录 ›</span></button>
+          </div>
+          <div class="t-bodyM c-ink2" style="margin-top:8px">
+            首次安装时固定；手机系统改时区不影响这里。
+          </div>
+
+          <div class="t-headS c-ink" style="margin-top:26px">备份</div>
+          <div style="margin-top:8px">
+            <button class="row" type="button"><span class="rl">手动导出备份</span><span class="rv">2.4 MB ›</span></button>
+            <button class="row" type="button"><span class="rl">本机恢复点</span><span class="rv">最近 10-05 03:12 ›</span></button>
+            <div class="row"><span class="rl">可选密码保护</span><span class="sw" role="switch" aria-checked="false" tabindex="0"><i></i></span></div>
+          </div>
+          <div class="t-bodyM c-ink2" style="margin-top:8px;background:var(--warn-tint);color:var(--warn-ink);border-radius:12px;padding:12px">
+            本机恢复点保存在同一台设备上，<b>不能</b>防止手机丢失或卸载。
+          </div>
+
+          <div class="t-headS c-ink" style="margin-top:26px">任务</div>
+          <div style="margin-top:8px">
+            <button class="row" type="button"><span class="rl">已归档任务</span><span class="rv">3 ›</span></button>
+          </div>
+
+          <div class="t-headS c-ink" style="margin-top:26px">关于</div>
+          <div style="margin-top:8px">
+            <div class="row"><span class="rl">版本</span><span class="rv">0.1.0 (1)</span></div>
+          </div>
+          <div style="height:90px"></div>
+        </div>
+
+        <!-- 时区变更全屏：数据风险文案优先，无插画 -->
+        <div data-set="zone" style="display:none">
+          <div class="t-headM c-ink" style="margin-top:24px">切换应用时区前请确认</div>
+          <div style="margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px">
+            <div class="t-labelM c-ink2">应用时区</div>
+            <div class="t-bodyL c-ink" style="margin-top:4px">Asia/Shanghai → <b>America/Los_Angeles</b></div>
+            <div class="t-labelM c-ink2" style="margin-top:14px">当前日期</div>
+            <div class="t-bodyL c-ink" style="margin-top:4px">2026 年 10 月 5 日 → <b>2026 年 10 月 4 日</b></div>
+            <div class="t-labelM c-ink2" style="margin-top:14px">下一次日常刷新</div>
+            <div class="t-bodyL c-ink" style="margin-top:4px">明天 00:00（约 <b>7 小时</b>后）</div>
+          </div>
+          <div class="banner warn" style="margin-top:14px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+            <span class="bt">已有的投入与完成记录<b>不会重算</b>，仍按记录发生时的时区归日。
+              切回旧时区也<b>不能</b>撤销已经发生的历史。</span>
+          </div>
+          <div class="banner danger" style="margin-top:10px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>
+            <span class="bt">当前有<b>进行中的计时</b>，需要先结束并保存。</span>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:20px">
+            <button class="btn ghost" type="button" style="flex:1">取消</button>
+            <button class="btn warnb" type="button" style="flex:1.4">结束计时并继续</button>
+          </div>
+        </div>
+
+        <!-- 恢复替换警示 -->
+        <div data-set="restore" style="display:none">
+          <div class="restore-head">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+            <span class="t-headS" style="color:var(--danger-ink)">恢复会完整替换当前数据</span>
+          </div>
+          <div class="t-bodyM c-ink2" style="margin-top:12px">
+            将被替换的内容：任务与日常实例、历史完成状态、全部计时与手动修正记录、设置。
+          </div>
+          <div style="margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px">
+            <div class="t-labelM c-ink2">备份密码（可选）</div>
+            <div class="input-like">••••••••</div>
+            <div class="t-bodyM c-ink2" style="margin-top:10px">
+              替换前会自动创建本机恢复点：<b>2026-10-05 04:12</b>。若失败，当前数据不变。
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:20px">
+            <button class="btn ghost" type="button" style="flex:1">取消</button>
+            <button class="btn danger" type="button" style="flex:1.5">开始恢复</button>
+          </div>
+        </div>
+
+        <!-- 错误密码 -->
+        <div data-set="badpw" style="display:none">
+          <div class="t-headM c-ink" style="margin-top:24px">输入备份密码</div>
+          <div style="margin-top:16px;background:var(--card);border:1.5px solid var(--danger-ink);border-radius:12px;padding:14px">
+            <div class="t-labelM c-danger">备份密码</div>
+            <div class="t-bodyL c-ink" style="margin-top:6px">••••••</div>
+          </div>
+          <div class="t-bodyM c-danger" style="margin-top:8px;font-weight:600">密码不正确或备份已损坏</div>
+          <div class="t-bodyM c-ink2" style="margin-top:10px">当前数据没有变化。可以重试或换一个文件。</div>
+          <div style="display:flex;gap:12px;margin-top:20px">
+            <button class="btn ghost" type="button" style="flex:1">取消</button>
+            <button class="btn primary" type="button" style="flex:1.3">重试</button>
+          </div>
+          <div class="t-labelM c-ink3" style="margin-top:14px">
+            不提示剩余次数、不做密码强度游戏化评分；忘记密码时本机恢复点仍可用。
+          </div>
+        </div>
+
+        <!-- 空间不足 -->
+        <div data-set="nospace" style="display:none">
+          <div class="t-headM c-ink" style="margin-top:24px">导出备份失败</div>
+          <div class="banner danger" style="margin-top:14px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 9v4M12 17h.01M10.3 3.9L2.4 18a2 2 0 001.7 3h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+            <span class="bt">存储空间不足，无法写入备份。请清理后重试。<b>现有数据没有变化。</b></span>
+          </div>
+          <button class="btn primary block" type="button" style="margin-top:18px">重试</button>
+          <div class="t-bodyM c-ink2" style="margin-top:14px">
+            若为介质或权限问题，文案改为「无法写入所选位置（权限或介质问题），现有数据没有变化。」
+          </div>
+        </div>
+
+        <!-- 恢复中失败 -->
+        <div data-set="restorefail" style="display:none">
+          <div class="t-headM c-ink" style="margin-top:24px">恢复未完成</div>
+          <div class="banner warn" style="margin-top:14px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h4l3 7 4-14 3 7h4"/></svg>
+            <span class="bt">已回退到恢复前的数据，<b>当前数据与恢复前一致</b>。<br>失败原因：备份文件校验不通过。</span>
+          </div>
+          <button class="btn primary block" type="button" style="margin-top:18px">重试</button>
+        </div>
+
+        <div style="height:24px"></div>
+      </div>
+      <nav class="nav" aria-label="主导航">
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/><circle cx="12" cy="15" r="1.6" fill="currentColor" stroke="none"/></svg>
+          <span class="nl">今天</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M8 2.5v4M16 2.5v4M7.5 13h2M11 13h2M14.5 13h2M7.5 17h2M11 17h2"/></svg>
+          <span class="nl">记录</span>
+        </button>
+        <button type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 19V9M9.3 19V4M14.7 19v-7M20 19v-4"/><path d="M2.5 21.5h19"/></svg>
+          <span class="nl">洞察</span>
+        </button>
+        <button type="button" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8l1.2 2.6 2.8-.6 1 2.7 2.6 1.2-1.4 2.5 1.4 2.5-2.6 1.2-1 2.7-2.8-.6L12 21.2l-1.2-2.6-2.8.6-1-2.7-2.6-1.2L5.8 12 4.4 9.5l2.6-1.2 1-2.7 2.8.6z"/></svg>
+          <span class="nl">设置</span>
+        </button>
+      </nav>
+    </div>
+    <div class="states" role="group" aria-label="设置页状态">
+      <button type="button" data-set-state="normal" aria-pressed="true">满态</button>
+      <button type="button" data-set-state="zone" aria-pressed="false">时区变更全屏</button>
+      <button type="button" data-set-state="restore" aria-pressed="false">恢复替换警示</button>
+      <button type="button" data-set-state="badpw" aria-pressed="false">错误密码</button>
+      <button type="button" data-set-state="nospace" aria-pressed="false">空间不足</button>
+      <button type="button" data-set-state="restorefail" aria-pressed="false">恢复中失败</button>
+      <button type="button" data-set-state="largefont" aria-pressed="false">大字体 2.0</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ 素材引用清单 ══════════════ -->
+<div class="panel" style="margin-top:34px">
+  <h2>本原型引用的素材路径（由插画创作员交付）</h2>
+  <p class="note" style="margin-bottom:12px">
+    下表是原型与说明文件<b>实际引用</b>的文件名，这些文件<b>已交付</b>在 <code>assets/art/</code> 下。
+    「素材展示方式」的两个模式都用这些真实素材，区别只在能否加载：
+    <b>已交付素材</b>模式用它们的 base64 内联副本（<code>assets/art/*.svg</code> 的逐字节副本，未改色、未重绘）；
+    <b>不可加载</b>模式保留相对路径，加载失败后走退化视觉，并在图上标出该位置本应使用哪个文件。
+    <b>本原型不声明这些素材的来源、作者或授权</b>——权利清单与 SHA-256 由插画创作员在
+    <code>docs/设计/素材权利清单.md</code> 中逐项给出；原型只引用文件名。
+  </p>
+  <table class="chk">
+    <thead><tr><th scope="col">路径</th><th scope="col">画幅</th><th scope="col">原型中的位置</th></tr></thead>
+    <tbody>
+      <tr><td><code>assets/art/cover_01_morning.svg</code></td><td>cover 328×200dp</td><td>今天页今日封面（当日序号 mod 4 = 0）</td></tr>
+      <tr><td><code>assets/art/task_temporary.svg</code></td><td>card 72×72dp</td><td>临时任务卡缩略图</td></tr>
+      <tr><td><code>assets/art/task_daily.svg</code></td><td>card 72×72dp</td><td>日常任务卡缩略图</td></tr>
+      <tr><td><code>assets/art/state_completed.svg</code></td><td>card 72×72dp</td><td>已完成折叠区卡片</td></tr>
+      <tr><td><code>assets/art/state_focusing.svg</code></td><td>card</td><td>专注页背景局部、计时状态卡（本原型未渲染背景层）</td></tr>
+      <tr><td><code>assets/art/chart_heatmap.svg</code></td><td>panel 328×160dp</td><td>洞察页标题插画</td></tr>
+      <tr><td><code>assets/art/empty_today.svg</code></td><td>panel</td><td>今天页空态（本原型用内联 SVG 示意构图，可替换为素材）</td></tr>
+      <tr><td><code>assets/art/placeholder_missing.svg</code></td><td>card</td><td>退化视觉（本原型用内联 SVG 实现了同一构图）</td></tr>
+      <tr><td><code>assets/art/scrim/cover_01_morning.json</code></td><td>—</td><td>封面强/中/弱遮罩停位与 safeText 矩形</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ══════════════ 对比度门禁 ══════════════ -->
+<div class="panel">
+  <h2>调色板对比度门禁（已在本机执行）</h2>
+  <p class="note" style="margin-bottom:12px">
+    命令：<code>python scripts/test/verify_design_tokens.py</code> → 退出码 <b>0</b>，输出
+    <code>全部 77 项组合达到各自阈值；4 项违禁组合确认低于阈值。</code>
+    下表为脚本原样输出的关键数值（静态 sRGB WCAG 2.x 计算，<b>不是</b>真机测量）。
+  </p>
+  <table class="chk">
+    <thead><tr><th scope="col">组合</th><th scope="col">阈值</th><th scope="col">实测</th><th scope="col">结论</th></tr></thead>
+    <tbody>
+      <tr><td><span class="swatch" style="background:#192C3B"></span>主墨 / 奶油纸</td><td>4.5</td><td class="num">12.64:1</td><td class="ok">PASS</td></tr>
+      <tr><td><span class="swatch" style="background:#596771"></span>次级墨 / 奶油纸</td><td>4.5</td><td class="num">5.14:1</td><td class="ok">PASS</td></tr>
+      <tr><td><span class="swatch" style="background:#B64931"></span>赭红 / 奶油纸</td><td>4.5</td><td class="num">4.64:1</td><td class="ok">PASS</td></tr>
+      <tr><td><span class="swatch" style="background:#953C28"></span>赭红加深 / 分组带</td><td>4.5</td><td class="num">5.83:1</td><td class="ok">PASS</td></tr>
+      <tr><td><span class="swatch" style="background:#FFFFFF"></span>白字 / 赭红实心</td><td>4.5</td><td class="num">5.27:1</td><td class="ok">PASS</td></tr>
+      <tr><td><span class="swatch" style="background:#7F8A92"></span>控制线 / 奶油纸</td><td>3.0</td><td class="num">3.11:1</td><td class="ok">PASS</td></tr>
+      <tr><td><span class="swatch" style="background:#8C7C63"></span>无记录虚线 / 奶油纸</td><td>3.0</td><td class="num">3.57:1</td><td class="ok">PASS</td></tr>
+      <tr><td><span class="swatch" style="background:#093E3B"></span>白字 / 色阶 4</td><td>4.5</td><td class="num">11.91:1</td><td class="ok">PASS</td></tr>
+      <tr><td><span class="swatch" style="background:#F2EDE4"></span>夜幕 主墨 / 夜幕底</td><td>4.5</td><td class="num">15.48:1</td><td class="ok">PASS</td></tr>
+      <tr><td><span class="swatch" style="background:#E0705A"></span>夜幕 accent / 卡片</td><td>4.5</td><td class="num">4.79:1</td><td class="ok">PASS</td></tr>
+      <tr><td><span class="swatch" style="background:#FFFFFF"></span>白字 / 夜幕实心 #C0553C</td><td>4.5</td><td class="num">4.56:1</td><td class="ok">PASS</td></tr>
+    </tbody>
+  </table>
+  <p class="note" style="margin-top:12px">
+    <b>本门禁不覆盖</b>：真机渲染对比度、OLED 色偏、插画实际像素叠加、纸纹材质复合、系统 CJK 字体栅格化后的实际字宽。
+    这些项在 <code>docs/设计/设计系统.md</code> §13 中逐条列为未验证。
+  </p>
+</div>
+
+<div class="panel">
+  <h2>本原型自身的验证结果</h2>
+  <p class="note" style="margin-bottom:12px">
+    命令：<code>python scripts/test/verify_prototype_offline.py</code> → 退出码 <b>0</b>，
+    <b>135 项断言全部通过</b>；截图输出在 <code>docs/设计/_原型渲染/</code>，
+    记录文件 <code>_渲染记录.txt</code> 与本轮产物清单<b>一致</b>（运行前会清空目录，不留上一轮残留）。
+    这是桌面 Chromium 的布局与离线性验证，<b>不是</b> Android/Compose 验收。
+  </p>
+  <table class="chk">
+    <thead><tr><th scope="col">断言</th><th scope="col">结果</th></tr></thead>
+    <tbody>
+      <tr><td>全部网络请求均为 <code>file://</code>（无 CDN / 远程字体 / 外部图片）</td><td class="ok">PASS</td></tr>
+      <tr><td>无 JS 运行时异常；console error 仅为素材不可加载（真实退化路径）</td><td class="ok">PASS</td></tr>
+      <tr><td>五个页面帧（今天/专注/记录/洞察/设置）各为 360px 宽，且都挂底部导航</td><td class="ok">PASS</td></tr>
+      <tr><td>封面 200px（= scrim JSON 契约 328×200dp）、缩略图 72px、导航 4 入口</td><td class="ok">PASS</td></tr>
+      <tr><td>完成控件命中区 = 48×48px；FAB 在底部导航之上；内容底距 82px &gt; FAB 56px</td><td class="ok">PASS</td></tr>
+      <tr><td>专注页「开始」操作条贴住底部导航、仅在选择模式出现（到点结果页不显示）</td><td class="ok">PASS</td></tr>
+      <tr><td>日历单元 44dp；日期数字**不与色阶块重叠**；首屏含无记录/修正为零/有投入三类</td><td class="ok">PASS</td></tr>
+      <tr><td>热力图 53 周 × 7 = 371 格；含「无记录」虚线圈格与非零色阶格</td><td class="ok">PASS</td></tr>
+      <tr><td>默认显示已交付素材且解码尺寸 = 契约值；切「不可加载」走真实退化路径</td><td class="ok">PASS</td></tr>
+      <tr><td>状态胶囊不折行（曾出现「日常」被折成两行，已修）</td><td class="ok">PASS</td></tr>
+      <tr><td>大字体下封面收窄/让位，首屏露出 1 张**完整**任务卡，区块标题仍单行</td><td class="ok">PASS</td></tr>
+      <tr><td>五页共 43 个状态截图的哈希在每个页面内互不相同</td><td class="ok">PASS</td></tr>
+      <tr><td>折叠区展开 / 热力格选中且同时仅一格选中</td><td class="ok">PASS</td></tr>
+      <tr><td>记录页图例覆盖页面出现的每个色阶档，且与洞察页共用同一套六档</td><td class="ok">PASS</td></tr>
+      <tr><td>记录页日历随系统字号缩放（单元 44→64dp、日期数字 14→20px，不横向溢出）</td><td class="ok">PASS</td></tr>
+      <tr><td>记录页滚到底后正文全部清出底部操作条（normal / sheet / largefont）</td><td class="ok">PASS</td></tr>
+      <tr><td>设置页大字号下条目上下排、每片段行宽 ≥120px（不再竖排单字）</td><td class="ok">PASS</td></tr>
+      <tr><td>计时数字自适应降档：1.00 档 52sp → 2.00 档 40sp，不溢出且控制按钮无需滚动</td><td class="ok">PASS</td></tr>
+      <tr><td>「日期 + 星期」标注与真实历法一致（按 <code>datetime</code> 复核 5 处）</td><td class="ok">PASS</td></tr>
+    </tbody>
+  </table>
+  <p class="note" style="margin-top:12px">
+    这些断言在本轮抓出了真实缺陷：<b>「状态截图哈希互不相同」</b>发现长标题与「数十项」两个状态的改动
+    落在可视区之外、截图与「满态」逐字节相同（等于没演示）；
+    <b>「首屏至少露出 1 张完整任务卡」</b>发现大字体下卡片被底栏截断 40%，
+    而当时更宽松的判据（顶部露出 20px 即算可见）却报「通过」；
+    第三轮独立合规评审又指出记录页图例缺档（页面上有 l4 深色格却没有对应图例）、
+    记录页日历不随字号缩放、记录页 FAB 永久压住正文、设置页大字号把中文挤成竖排单字、
+    跨日完成页星期标注写错、以及计时数字降档规则从未在原型里生效——六项均已修正并各自钉上断言。
+  </p>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   F. 已交付素材的内联副本（base64 of the delivered SVG, UTF-8）
+   为什么内联：Chromium 禁止 file:// 页面加载 file:// 子资源（opaque origin
+   子资源策略），双击打开的离线单文件无法通过相对路径显示 assets/art。
+   内联后双击即可看到真实交付素材；相对路径模式仍保留，用于演示退化视觉。
+   这些是 assets/art/*.svg 的逐字节副本，未改色、未重绘。
+   来源与授权见 docs/设计/素材权利清单.md。
+   ============================================================ */
+var INLINE_ART = {
+  "chart_heatmap": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NTYgMzIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjMyMCI+CiAgPCEtLSBjaGFydF9oZWF0bWFwIOKAlCDnu5/orqHkuLvpopjvvJrmoLzlrZDnn6npmLXmvJTljJbjgILljp/liJvnn6Lph4/mj5LnlLvvvIzop4EgZG9jcy/orr7orqEv57Sg5p2Q5p2D5Yip5riF5Y2VLm1kIC0tPgogIDxyZWN0IGlkPSJiZyIgeD0iMCIgeT0iMCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSIzMjAiIGZpbGw9IiNFRkU4REIiLz4KICA8cmVjdCBpZD0iZmllbGQiIHg9IjAiIHk9IjAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMTQwIiBmaWxsPSIjRkJGOEYyIi8+CgogIDwhLS0g5Zu+5b2i57uE5pW05L2T5LiK56e777yM5L2/5rex6Imy6L2u5buT5YWo6YOo5pS25ZyoIHk8MTI477yI5bqV6YOoIDk2ZHAg5paH5a2X5a6J5YWo5Yy65LiK5pa577yJIC0tPgogIDxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAsLTExKSI+CiAgPCEtLSDlsYIgMe+8muaXoOiusOW9leagvO+8iOiZmue6v+i9ruW7k+S7peefree6v+auteetieS7t+ihqOi+vu+8jOS4jeS9v+eUqOaPj+i+ueiZmue6v+WxnuaAp++8iSAtLT4KICA8ZyBzdHJva2U9IiM4QzdDNjMiIHN0cm9rZS13aWR0aD0iMiIgZmlsbD0ibm9uZSI+CiAgICA8cmVjdCB4PSI0MCIgeT0iMjIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IHg9IjgyIiB5PSIyMiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+CiAgICA8cmVjdCB4PSIxMjQiIHk9IjIyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz48cmVjdCB4PSIxNjYiIHk9IjIyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz4KICAgIDxyZWN0IHg9IjQwIiB5PSI2MiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+PHJlY3QgeD0iODIiIHk9IjYyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz4KICAgIDxyZWN0IHg9IjQwIiB5PSIxMDIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIvPgogIDwvZz4KCiAgPCEtLSDlsYIgMu+8muiJsumYtiAxIC0tPgogIDxnIGZpbGw9IiNBMkM4QzIiPgogICAgPHJlY3QgeD0iMjA4IiB5PSIyMiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+PHJlY3QgeD0iMjkyIiB5PSIyMiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+CiAgICA8cmVjdCB4PSIzMzQiIHk9IjIyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz48cmVjdCB4PSI0MTgiIHk9IjIyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz4KICAgIDxyZWN0IHg9IjQ2MCIgeT0iMjIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IHg9IjUwMiIgeT0iMjIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIvPgogICAgPHJlY3QgeD0iMTI0IiB5PSI2MiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+PHJlY3QgeD0iMTY2IiB5PSI2MiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+CiAgICA8cmVjdCB4PSIyMDgiIHk9IjYyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz48cmVjdCB4PSIyNTAiIHk9IjYyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz4KICAgIDxyZWN0IHg9IjgyIiB5PSIxMDIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IHg9IjEyNCIgeT0iMTAyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz4KICAgIDxyZWN0IHg9IjE2NiIgeT0iMTAyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz4KICA8L2c+CgogIDwhLS0g5bGCIDPvvJroibLpmLYgMiAtLT4KICA8ZyBmaWxsPSIjNUU5OTkzIj4KICAgIDxyZWN0IHg9IjM3NiIgeT0iMjIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IHg9IjI5MiIgeT0iNjIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIvPgogICAgPHJlY3QgeD0iMzM0IiB5PSI2MiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+PHJlY3QgeD0iMzc2IiB5PSI2MiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+CiAgICA8cmVjdCB4PSI0NjAiIHk9IjYyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz48cmVjdCB4PSI1MDIiIHk9IjYyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz4KICAgIDxyZWN0IHg9IjIwOCIgeT0iMTAyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz48cmVjdCB4PSIyNTAiIHk9IjEwMiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+CiAgICA8cmVjdCB4PSI0MTgiIHk9IjEwMiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+PHJlY3QgeD0iNDYwIiB5PSIxMDIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIvPgogIDwvZz4KCiAgPCEtLSDlsYIgNO+8muiJsumYtiAzIOS4juiJsumYtiA0IC0tPgogIDxnIGZpbGw9IiMyNTY1NjAiPgogICAgPHJlY3QgeD0iNDE4IiB5PSI2MiIgd2lkdGg9IjMwIiBoZWlnaHQ9IjMwIi8+PHJlY3QgeD0iMjkyIiB5PSIxMDIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIvPgogICAgPHJlY3QgeD0iMzM0IiB5PSIxMDIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIvPjxyZWN0IHg9IjM3NiIgeT0iMTAyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiLz4KICA8L2c+CiAgPHJlY3QgeD0iNTAyIiB5PSIxMDIiIHdpZHRoPSIzMCIgaGVpZ2h0PSIzMCIgZmlsbD0iIzA5M0UzQiIvPgogIDxyZWN0IHg9IjQ2MCIgeT0iMTAyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiIGZpbGw9IiMwOTNFM0IiLz4KCiAgPCEtLSDlsYIgNe+8mumAieS4reagvO+8iOi1remHke+8ie+8jOS+m+eCueWHu+ivpuaDheeahOinhuiniemUmueCuSAtLT4KICA8cmVjdCB4PSIyNTAiIHk9IjIyIiB3aWR0aD0iMzAiIGhlaWdodD0iMzAiIGZpbGw9IiNEOEIyNjciIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIi8+CgogIDwhLS0g5bGCIDbvvJrotovlir/nur8gLS0+CiAgPHBhdGggZD0iTTU0MCAxMzIgNTYwIDk2IDU4MCAxMTAgNjAwIDYwIDYyMCA3NCA2MzggMzQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJGNUQ4QyIKICAgICAgICBzdHJva2Utd2lkdGg9IjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik02MzYgMjAgNjUyIDMyIDYzNCA0NFoiIGZpbGw9IiMyRjVEOEMiIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAsLTE4KSIvPgogIDwvZz4KCiAgPCEtLSDkuJ3nvZHpopfnspLvvJrlj6rlnKjpobbpg6jnlZnnmb3kuI7lt6bkvqfnlZnnmb3lhoUgLS0+CiAgPGcgaWQ9ImdyYWluIiBmaWxsPSIjN0Y4QTkyIiBvcGFjaXR5PSIwLjMyIj4KICAgIDxjaXJjbGUgY3g9IjE2IiBjeT0iMTQiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjMwMCIgY3k9IjEwIiByPSIxLjciLz48Y2lyY2xlIGN4PSIzOTIiIGN5PSI4IiByPSIxLjciLz4KICAgIDxjaXJjbGUgY3g9IjYwMCIgY3k9IjEyIiByPSIxLjciLz48Y2lyY2xlIGN4PSIxOCIgY3k9IjcwIiByPSIxLjciLz48Y2lyY2xlIGN4PSIxNiIgY3k9IjEyNiIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI2NDAiIGN5PSIxMTIiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjU1NiIgY3k9IjE0IiByPSIxLjciLz4KICA8L2c+Cjwvc3ZnPgo=",
+  "cover_01_morning": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NTYgNDAwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjQwMCI+CiAgPCEtLSBjb3Zlcl8wMV9tb3JuaW5nIOKAlCDmmajlhYnvvI/mkYrlvIDnmoTnurjpobXjgILljp/liJvnn6Lph4/mj5LnlLvvvIzop4EgZG9jcy/orr7orqEv57Sg5p2Q5p2D5Yip5riF5Y2VLm1kIC0tPgogIDxkZWZzPgogICAgPHJhZGlhbEdyYWRpZW50IGlkPSJsaWdodCIgY3g9IjAuMiIgY3k9IjAuMTIiIHI9IjAuNjIiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNGRkZGRkYiIHN0b3Atb3BhY2l0eT0iMC4yMiIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNGRkZGRkYiIHN0b3Atb3BhY2l0eT0iMCIvPgogICAgPC9yYWRpYWxHcmFkaWVudD4KICA8L2RlZnM+CgogIDxyZWN0IGlkPSJiZyIgeD0iMCIgeT0iMCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSI0MDAiIGZpbGw9IiNFRkU4REIiLz4KCiAgPCEtLSDlsYIgMe+8muWkqeepuuWcuu+8jOmUmeS9jSA4cHgg55qE5Y2w54mI5Y6L6L65IC0tPgogIDxyZWN0IGlkPSJza3kiIHg9IjAiIHk9IjAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMjM4IiBmaWxsPSIjMkY1RDhDIi8+CiAgPHJlY3QgaWQ9InNreVNoaWZ0IiB4PSIwIiB5PSIyMzAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMTQiIGZpbGw9IiMyNTUxN0IiIG9wYWNpdHk9IjAuODUiLz4KCiAgPCEtLSDlsYIgMu+8muWPsOmdoiAtLT4KICA8cmVjdCBpZD0iZGVza1RvcCIgeD0iMCIgeT0iMjQ0IiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjIwIiBmaWxsPSIjRTZERUQwIi8+CiAgPHJlY3QgaWQ9ImRlc2siIHg9IjAiIHk9IjI2NCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSIxMzYiIGZpbGw9IiNGNUYwRTgiLz4KCiAgPCEtLSDlsYIgM++8muaZqOWFiSAtLT4KICA8Y2lyY2xlIGN4PSI0ODgiIGN5PSIxMDQiIHI9Ijg4IiBmaWxsPSIjRkJFNEM0IiBvcGFjaXR5PSIwLjUiLz4KICA8Y2lyY2xlIGN4PSI0ODgiIGN5PSIxMDQiIHI9IjU0IiBmaWxsPSIjRjJBMDNEIi8+CiAgPGNpcmNsZSBjeD0iNDg4IiBjeT0iMTA0IiByPSI1NCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjMiLz4KICA8cGF0aCBkPSJNNDEyIDQ4IDM4MiAyMk00ODAgMjJ2LTE2TTU2NiA2MCA1OTYgMzRNNTk4IDEwOGgyMiIgZmlsbD0ibm9uZSIKICAgICAgICBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CgogIDwhLS0g5bGCIDTvvJrmkYrlvIDnmoTnurjpobUgLS0+CiAgPHBhdGggZD0iTTEyMCAyNDYgMjIyIDIyNlYxNzRMMTIwIDE5NFoiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPHBhdGggZD0iTTIyMiAyMjYgMzMwIDI0MlYxOTBMMjIyIDE3NFoiIGZpbGw9IiNGQkY4RjIiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPHBhdGggZD0iTTIyMiAxNzR2NTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPHBhdGggZD0iTTE0MCAyMDYgMjA0IDE5Mk0xNDAgMjIwIDIwNCAyMDZNMTQwIDIzNCAyMDQgMjIwIiBmaWxsPSJub25lIgogICAgICAgIHN0cm9rZT0iIzVGNkU3OCIgc3Ryb2tlLXdpZHRoPSIyLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik0yNDAgMTkwIDMxNCAyMDRNMjQwIDIwNCAzMTQgMjE4TTI0MCAyMTggMzE0IDIzMiIgZmlsbD0ibm9uZSIKICAgICAgICBzdHJva2U9IiM1RjZFNzgiIHN0cm9rZS13aWR0aD0iMi41IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KCiAgPCEtLSDkuJ3nvZHpopfnspLvvJrlj6rlnKjlpKnnqbroibLlnZflhoXpg6jvvIzpgb/lvIDlupXpg6jmloflrZflronlhajljLogLS0+CiAgPGcgaWQ9ImdyYWluIiBmaWxsPSIjMjU1MTdCIiBvcGFjaXR5PSIwLjM1Ij4KICAgIDxjaXJjbGUgY3g9IjQwIiBjeT0iNDAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9Ijc4IiBjeT0iODYiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjExOCIgY3k9IjM0IiByPSIxLjciLz4KICAgIDxjaXJjbGUgY3g9IjE1MCIgY3k9IjEyMCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMTk2IiBjeT0iNjQiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjIzMiIgY3k9IjE0MCIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSIyNjgiIGN5PSIzMCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMzAwIiBjeT0iOTYiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjM0MiIgY3k9IjUyIiByPSIxLjciLz4KICAgIDxjaXJjbGUgY3g9IjM3MiIgY3k9IjE2MCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNDEwIiBjeT0iMTIwIiByPSIxLjciLz48Y2lyY2xlIGN4PSI2MCIgY3k9IjE3MCIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSIxMDQiIGN5PSIyMDYiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjE2MCIgY3k9IjE4MiIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMjE0IiBjeT0iMjE0IiByPSIxLjciLz4KICAgIDxjaXJjbGUgY3g9IjI2OCIgY3k9IjE3MCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMzMwIiBjeT0iMjA2IiByPSIxLjciLz48Y2lyY2xlIGN4PSIzODgiIGN5PSIyMTQiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iNDQwIiBjeT0iMTk2IiByPSIxLjciLz48Y2lyY2xlIGN4PSI1NTYiIGN5PSI0MCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNjAwIiBjeT0iODYiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iNjM2IiBjeT0iMTQwIiByPSIxLjciLz48Y2lyY2xlIGN4PSI1OTYiIGN5PSIxOTYiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjUyMCIgY3k9IjIxNCIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI0MzAiIGN5PSI1NCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNTYwIiBjeT0iMTUwIiByPSIxLjciLz4KICA8L2c+CgogIDwhLS0g5LiA5aSE5p+U5ZKM56m66Ze05YWJ77yM5L2N5LqO5Zu+5b2i5Yy677yM5LiN6KaG55uW5paH5a2X5a6J5YWo5Yy6IC0tPgogIDxyZWN0IGlkPSJzb2Z0TGlnaHQiIHg9IjAiIHk9IjAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMjM4IiBmaWxsPSJ1cmwoI2xpZ2h0KSIvPgo8L3N2Zz4K",
+  "cover_02_desk": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NTYgNDAwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjQwMCI+CiAgPCEtLSBjb3Zlcl8wMl9kZXNrIOKAlCDlt6XkvZzlj7DvvI/nrJTkuI7mna/jgILljp/liJvnn6Lph4/mj5LnlLvvvIzop4EgZG9jcy/orr7orqEv57Sg5p2Q5p2D5Yip5riF5Y2VLm1kIC0tPgogIDxkZWZzPgogICAgPHJhZGlhbEdyYWRpZW50IGlkPSJsaWdodCIgY3g9IjAuMTYiIGN5PSIwLjEiIHI9IjAuNiI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI0ZGRkZGRiIgc3RvcC1vcGFjaXR5PSIwLjI2Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI0ZGRkZGRiIgc3RvcC1vcGFjaXR5PSIwIi8+CiAgICA8L3JhZGlhbEdyYWRpZW50PgogIDwvZGVmcz4KCiAgPHJlY3QgaWQ9ImJnIiB4PSIwIiB5PSIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjQwMCIgZmlsbD0iI0VGRThEQiIvPgoKICA8IS0tIOWxgiAx77ya5aKZ6Z2i5Zy6IC0tPgogIDxyZWN0IGlkPSJ3YWxsIiB4PSIwIiB5PSIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjIzNiIgZmlsbD0iI0Q4QjI2NyIvPgogIDxyZWN0IGlkPSJ3YWxsU2hpZnQiIHg9IjAiIHk9IjIyOCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSIxNCIgZmlsbD0iIzdBNTQxMCIgb3BhY2l0eT0iMC41NSIvPgoKICA8IS0tIOWxgiAy77ya5Y+w6Z2iIC0tPgogIDxyZWN0IGlkPSJkZXNrRWRnZSIgeD0iMCIgeT0iMjQyIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjE4IiBmaWxsPSIjN0E1NDEwIiBvcGFjaXR5PSIwLjM1Ii8+CiAgPHJlY3QgaWQ9ImRlc2siIHg9IjAiIHk9IjI2MCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSIxNDAiIGZpbGw9IiNGNUYwRTgiLz4KCiAgPCEtLSDlsYIgM++8muadr+S4juaJmOein++8iOaVtOe7hOaUtuWcqCB54omkMjQ077yM5bqV6YOoIDcyZHAg5paH5a2X5a6J5YWo5Yy65YaF5LiN5pS+5rex6Imy6L2u5buT77yJIC0tPgogIDxlbGxpcHNlIGN4PSIyMTQiIGN5PSIyMjQiIHJ4PSI3NCIgcnk9IjE2IiBmaWxsPSIjRkZGRkZGIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxwYXRoIGQ9Ik0xNjAgMTUwaDEwOHY1MmE1NCAyMiAwIDAgMS0xMDggMHoiIGZpbGw9IiM1RTk5OTMiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPHBhdGggZD0iTTI2OCAxNjRjMjIgMCAyMiA0MCAwIDQwIiBmaWxsPSJub25lIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTTE2OCAxNTBoOTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNMTkyIDEzMmMtOC0xNCA4LTIwIDAtMzRNMjE2IDEzMmMtOC0xNCA4LTIwIDAtMzQiIGZpbGw9Im5vbmUiCiAgICAgICAgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjIuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBvcGFjaXR5PSIwLjYiLz4KCiAgPCEtLSDlsYIgNO+8mueslCAtLT4KICA8IS0tIOeslO+8mueslOWwluaUtuWcqCB54omkMjUx77yM5LiN6LaK6L+HIDI1NiDnmoTlronlhajljLrpobbovrkgLS0+CiAgPHBhdGggZD0iTTM1MiAyNDQgNTIwIDE1MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjQjY0OTMxIiBzdHJva2Utd2lkdGg9IjE0IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNMzUyIDI0NCA1MjAgMTUwIiBmaWxsPSJub25lIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBvcGFjaXR5PSIwLjM1Ii8+CiAgPHBhdGggZD0iTTUyMCAxNTAgNTY2IDEyMiA1NzggMTQwIDUzNCAxNjhaIiBmaWxsPSIjRUZFOERCIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxwYXRoIGQ9Ik01NjYgMTIyIDU3OCAxNDAgNTkyIDEzMFoiIGZpbGw9IiMxOTJDM0IiLz4KCiAgPCEtLSDlsYIgNe+8muijgeWIh+Weq+S4iueahOWIu+W6puaal+ekuiAtLT4KICA8cGF0aCBkPSJNNDA0IDI0MGgyMTJNNDA0IDI0NmgyMTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIyIiBvcGFjaXR5PSIwLjM1Ii8+CgogIDwhLS0g5Lid572R6aKX57KS77ya5Y+q5Zyo5aKZ6Z2i6Imy5Z2X5YaF6YOoIC0tPgogIDxnIGlkPSJncmFpbiIgZmlsbD0iIzdBNTQxMCIgb3BhY2l0eT0iMC4zMiI+CiAgICA8Y2lyY2xlIGN4PSI0NCIgY3k9IjUyIiByPSIxLjciLz48Y2lyY2xlIGN4PSI4OCIgY3k9IjEyMCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMTMyIiBjeT0iNDAiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iMTc2IiBjeT0iOTgiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjIyOCIgY3k9IjQ2IiByPSIxLjciLz48Y2lyY2xlIGN4PSIyNzIiIGN5PSIxMTgiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iMzIwIiBjeT0iMzYiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjM2NiIgY3k9IjkyIiByPSIxLjciLz48Y2lyY2xlIGN4PSI0MTYiIGN5PSI1MiIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI0NjIiIGN5PSIxMTYiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjUwOCIgY3k9IjQ0IiByPSIxLjciLz48Y2lyY2xlIGN4PSI1NTYiIGN5PSI5NiIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI2MDIiIGN5PSI0MCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNjQwIiBjeT0iMTEyIiByPSIxLjciLz48Y2lyY2xlIGN4PSI2MiIgY3k9IjE4NiIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSIxMTgiIGN5PSIyMDQiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjMzMiIgY3k9IjE5MiIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMzkyIiBjeT0iMjEyIiByPSIxLjciLz4KICAgIDxjaXJjbGUgY3g9IjQ1MiIgY3k9IjE5NiIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNTEyIiBjeT0iMjE0IiByPSIxLjciLz48Y2lyY2xlIGN4PSI1NzIiIGN5PSIxOTQiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iNjI4IiBjeT0iMjEyIiByPSIxLjciLz4KICA8L2c+CgogIDxyZWN0IGlkPSJzb2Z0TGlnaHQiIHg9IjAiIHk9IjAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMjM2IiBmaWxsPSJ1cmwoI2xpZ2h0KSIvPgo8L3N2Zz4K",
+  "cover_03_window": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NTYgNDAwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjQwMCI+CiAgPCEtLSBjb3Zlcl8wM193aW5kb3cg4oCUIOeql+S4juakjeeJqeWJquW9seOAguWOn+WIm+efoumHj+aPkueUu++8jOingSBkb2NzL+iuvuiuoS/ntKDmnZDmnYPliKnmuIXljZUubWQgLS0+CiAgPGRlZnM+CiAgICA8cmFkaWFsR3JhZGllbnQgaWQ9ImxpZ2h0IiBjeD0iMC4xOCIgY3k9IjAuMDgiIHI9IjAuNTgiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNGRkZGRkYiIHN0b3Atb3BhY2l0eT0iMC4yMCIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEiIHN0b3AtY29sb3I9IiNGRkZGRkYiIHN0b3Atb3BhY2l0eT0iMCIvPgogICAgPC9yYWRpYWxHcmFkaWVudD4KICA8L2RlZnM+CgogIDxyZWN0IGlkPSJiZyIgeD0iMCIgeT0iMCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSI0MDAiIGZpbGw9IiNFRkU4REIiLz4KCiAgPCEtLSDlsYIgMe+8muWimemdouiJsuWcuiAtLT4KICA8cmVjdCBpZD0id2FsbCIgeD0iMCIgeT0iMCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSIyMzYiIGZpbGw9IiMxRjZCNjMiLz4KICA8cmVjdCBpZD0id2FsbFNoaWZ0IiB4PSIwIiB5PSIyMjgiIHdpZHRoPSI2NTYiIGhlaWdodD0iMTQiIGZpbGw9IiMxNjRGNDkiIG9wYWNpdHk9IjAuODUiLz4KCiAgPCEtLSDlsYIgMu+8mueql+ahhuS4jueql+WkliAtLT4KICA8cmVjdCBpZD0iZnJhbWUiIHg9Ijk2IiB5PSIzNiIgd2lkdGg9IjMwMCIgaGVpZ2h0PSIxNzYiIGZpbGw9IiNGNUYwRTgiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPHJlY3QgaWQ9InBhbmVMIiB4PSIxMTAiIHk9IjUwIiB3aWR0aD0iMTI4IiBoZWlnaHQ9IjE0OCIgZmlsbD0iIzJGNUQ4QyIvPgogIDxyZWN0IGlkPSJwYW5lUiIgeD0iMjU0IiB5PSI1MCIgd2lkdGg9IjEyOCIgaGVpZ2h0PSIxNDgiIGZpbGw9IiMyRjVEOEMiLz4KICA8cmVjdCBpZD0icGFuZUwyIiB4PSIxMTAiIHk9IjUwIiB3aWR0aD0iMTI4IiBoZWlnaHQ9IjE0OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjMiLz4KICA8cmVjdCBpZD0icGFuZVIyIiB4PSIyNTQiIHk9IjUwIiB3aWR0aD0iMTI4IiBoZWlnaHQ9IjE0OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjMiLz4KICA8cGF0aCBkPSJNMjQ2IDM2djE3NiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjMiLz4KCiAgPCEtLSDlsYIgM++8muWPsOmdouS4jueql+WPsCAtLT4KICA8cmVjdCBpZD0iZGVzayIgeD0iMCIgeT0iMjUyIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjE0OCIgZmlsbD0iI0Y1RjBFOCIvPgogIDxyZWN0IGlkPSJzaWxsIiB4PSI4NCIgeT0iMjAwIiB3aWR0aD0iMzI0IiBoZWlnaHQ9IjE0IiBmaWxsPSIjRUZFOERCIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIvPgoKICA8IS0tIOWxgiA077ya5qSN54mp5Ymq5b2xIC0tPgogIDxwYXRoIGQ9Ik0xNTAgMTk2QzExOCAxNTggMTMwIDEwNCAxNjggODggMTg0IDEyNCAxNzYgMTY4IDE1MCAxOTZaIiBmaWxsPSIjMUY2QjYzIi8+CiAgPHBhdGggZD0iTTE5NiAyMDBDMTgyIDE1OCAyMDIgMTA4IDI0MCA5NiAyNDggMTM4IDIzMCAxNzggMTk2IDIwMFoiIGZpbGw9IiMxRjZCNjMiLz4KICA8cGF0aCBkPSJNMTcyIDIwNkMxNTIgMTg2IDE0OCAxNTYgMTYyIDEzNCAxODIgMTU2IDE4NiAxODYgMTcyIDIwNloiIGZpbGw9IiMxRjZCNjMiLz4KICA8cGF0aCBkPSJNMTg2IDIxNEMxODAgMTg2IDE4MiAxNTYgMTkwIDEzOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMUY2QjYzIiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik0xNTYgMjE0aDY4bC0xMCAzOGgtNDh6IiBmaWxsPSIjNUU5OTkzIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIvPgoKICA8IS0tIOWxgiA177ya5aKZ6Z2i5LiK55qE5YWJ5bim77yI6YG/5byA5bqV6YOo5paH5a2X5a6J5YWo5Yy6IHniiaUyNTbvvIkgLS0+CiAgPHBhdGggZD0iTTMzOCAyMDIgNTEyIDIwMiA1NjAgMjE2IDM2NiAyMTZaIiBmaWxsPSIjRjJBMDNEIiBvcGFjaXR5PSIwLjQ1Ii8+CgogIDwhLS0g5Lid572R6aKX57KS77ya5Y+q5Zyo5aKZ6Z2i6Imy5Z2X5YaF6YOo77yM6YG/5byA56qX5rSeIC0tPgogIDxnIGlkPSJncmFpbiIgZmlsbD0iIzE2NEY0OSIgb3BhY2l0eT0iMC40Ij4KICAgIDxjaXJjbGUgY3g9IjMwIiBjeT0iNjAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjUyIiBjeT0iMTUwIiByPSIxLjciLz48Y2lyY2xlIGN4PSIyOCIgY3k9IjIxMCIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI0NiIgY3k9IjExMCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNjQiIGN5PSIxODgiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjM0IiBjeT0iMjQiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iNDUyIiBjeT0iNTAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjUwMCIgY3k9IjExMCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNTU2IiBjeT0iNTgiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iNjA0IiBjeT0iMTQwIiByPSIxLjciLz48Y2lyY2xlIGN4PSI2NDAiIGN5PSI3MCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNDcwIiBjeT0iMTgwIiByPSIxLjciLz4KICAgIDxjaXJjbGUgY3g9IjUyMCIgY3k9IjIwMCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNTgwIiBjeT0iMTcwIiByPSIxLjciLz48Y2lyY2xlIGN4PSI2MzYiIGN5PSIyMTAiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iMTIwIiBjeT0iMTgiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjIwMCIgY3k9IjE2IiByPSIxLjciLz48Y2lyY2xlIGN4PSIzMDAiIGN5PSIxOCIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI0MjAiIGN5PSIxNiIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNTYwIiBjeT0iMjAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjY0MCIgY3k9IjE4IiByPSIxLjciLz4KICA8L2c+CgogIDxyZWN0IGlkPSJzb2Z0TGlnaHQiIHg9IjAiIHk9IjAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMjM2IiBmaWxsPSJ1cmwoI2xpZ2h0KSIvPgo8L3N2Zz4K",
+  "cover_04_lamp": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NTYgNDAwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjQwMCI+CiAgPCEtLSBjb3Zlcl8wNF9sYW1wIOKAlCDlj7Dnga/kuI7loIblj6DkuabmnKzjgILljp/liJvnn6Lph4/mj5LnlLvvvIzop4EgZG9jcy/orr7orqEv57Sg5p2Q5p2D5Yip5riF5Y2VLm1kIC0tPgogIDxkZWZzPgogICAgPHJhZGlhbEdyYWRpZW50IGlkPSJsaWdodCIgY3g9IjAuMzIiIGN5PSIwLjUiIHI9IjAuNSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI0Q4QjI2NyIgc3RvcC1vcGFjaXR5PSIwLjM0Ii8+CiAgICAgIDxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI0Q4QjI2NyIgc3RvcC1vcGFjaXR5PSIwIi8+CiAgICA8L3JhZGlhbEdyYWRpZW50PgogIDwvZGVmcz4KCiAgPHJlY3QgaWQ9ImJnIiB4PSIwIiB5PSIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjQwMCIgZmlsbD0iI0VGRThEQiIvPgoKICA8IS0tIOWxgiAx77ya5aSc6Ze05aKZ6Z2i5Zy6IC0tPgogIDxyZWN0IGlkPSJ3YWxsIiB4PSIwIiB5PSIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjIzNiIgZmlsbD0iIzJGNUQ4QyIvPgogIDxyZWN0IGlkPSJ3YWxsU2hpZnQiIHg9IjAiIHk9IjIyOCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSIxNCIgZmlsbD0iIzI1NTE3QiIgb3BhY2l0eT0iMC44NSIvPgoKICA8IS0tIOWxgiAy77ya5pyI5LiO5Y+w6Z2iIC0tPgogIDxjaXJjbGUgY3g9IjU1NiIgY3k9Ijg0IiByPSI0OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRDhCMjY3IiBzdHJva2Utd2lkdGg9IjMiIG9wYWNpdHk9IjAuNDUiLz4KICA8Y2lyY2xlIGN4PSI1NTYiIGN5PSI4NCIgcj0iMzYiIGZpbGw9IiNEOEIyNjciLz4KICA8cmVjdCBpZD0iZGVza0VkZ2UiIHg9IjAiIHk9IjIzNiIgd2lkdGg9IjY1NiIgaGVpZ2h0PSIxNiIgZmlsbD0iIzFFNDY3MCIgb3BhY2l0eT0iMC44NSIvPgogIDxyZWN0IGlkPSJkZXNrIiB4PSIwIiB5PSIyNTIiIHdpZHRoPSI2NTYiIGhlaWdodD0iMTQ4IiBmaWxsPSIjRjVGMEU4Ii8+CgogIDwhLS0g5bGCIDPvvJrnga/lhYnplKXvvIjota3ph5HvvIzkuI7mnKzluYXnmoTota3nuqIv6ZK06JOd5ZCI6K6h5LiJ5Liq6Imy5qe977yJIC0tPgogIDxwYXRoIGQ9Ik0xMzYgMTkwIDI4OCAxOTAgMzcyIDI1MiA1MiAyNTJaIiBmaWxsPSIjRDhCMjY3IiBvcGFjaXR5PSIwLjIyIi8+CgogIDwhLS0g5bGCIDTvvJrlj7Dnga8gLS0+CiAgPHBhdGggZD0iTTE1MCAxMjggMjY4IDEyOCAyOTggMTg2IDEyMiAxODZaIiBmaWxsPSIjQjY0OTMxIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxwYXRoIGQ9Ik0xMzAgMTc2IDI4OCAxNzYgMjk4IDE4NiAxMjIgMTg2WiIgZmlsbD0iI0Q4QjI2NyIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjMiLz4KICA8cGF0aCBkPSJNMjA5IDE4NnYzOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxlbGxpcHNlIGN4PSIyMDkiIGN5PSIyMzIiIHJ4PSI2NCIgcnk9IjEzIiBmaWxsPSIjRDhCMjY3IiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIvPgoKICA8IS0tIOWxgiA177ya5aCG5Y+g5Lmm5pysIC0tPgogIDxyZWN0IHg9IjQwNiIgeT0iMjE4IiB3aWR0aD0iMTk2IiBoZWlnaHQ9IjE4IiBmaWxsPSIjQjY0OTMxIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxyZWN0IHg9IjQxOCIgeT0iMjAwIiB3aWR0aD0iMTcyIiBoZWlnaHQ9IjE4IiBmaWxsPSIjRjVGMEU4IiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxyZWN0IHg9IjQwMCIgeT0iMTgyIiB3aWR0aD0iMjA2IiBoZWlnaHQ9IjE4IiBmaWxsPSIjRDhCMjY3IiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxwYXRoIGQ9Ik00MzIgMTgydjE4TTQ3MCAyMDB2MThNNDQ4IDIxOHYxOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjMiIG9wYWNpdHk9IjAuNTUiLz4KCiAgPCEtLSDkuJ3nvZHpopfnspLvvJrlj6rlnKjlopnpnaLoibLlnZflhoXpg6ggLS0+CiAgPGcgaWQ9ImdyYWluIiBmaWxsPSIjMjU1MTdCIiBvcGFjaXR5PSIwLjM4Ij4KICAgIDxjaXJjbGUgY3g9IjQ0IiBjeT0iNDgiIHI9IjEuNyIvPjxjaXJjbGUgY3g9Ijg2IiBjeT0iMTEyIiByPSIxLjciLz48Y2lyY2xlIGN4PSIxMjgiIGN5PSIzNiIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI5NiIgY3k9IjIwNCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMTYwIiBjeT0iNzAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjIxNCIgY3k9IjI0IiByPSIxLjciLz4KICAgIDxjaXJjbGUgY3g9IjMzMCIgY3k9IjQyIiByPSIxLjciLz48Y2lyY2xlIGN4PSIzODYiIGN5PSIxMDgiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjQzMCIgY3k9IjM2IiByPSIxLjciLz4KICAgIDxjaXJjbGUgY3g9IjM1MiIgY3k9IjE4MCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMjk4IiBjeT0iMjEyIiByPSIxLjciLz48Y2lyY2xlIGN4PSI2MjgiIGN5PSI0NiIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI2NDAiIGN5PSIxNTAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjYyMCIgY3k9IjIwNiIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNjYiIGN5PSIxNjQiIHI9IjEuNyIvPgogIDwvZz4KCiAgPHJlY3QgaWQ9InNvZnRMaWdodCIgeD0iMCIgeT0iNjAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMTkyIiBmaWxsPSJ1cmwoI2xpZ2h0KSIvPgo8L3N2Zz4K",
+  "empty_insights": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NTYgMzIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjMyMCI+CiAgPCEtLSBlbXB0eV9pbnNpZ2h0cyDigJQg56m65oCB77ya56m655m95Z2Q5qCH57q444CC5Y6f5Yib55+i6YeP5o+S55S777yM6KeBIGRvY3Mv6K6+6K6hL+e0oOadkOadg+WIqea4heWNlS5tZCAtLT4KICA8cmVjdCBpZD0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMzIwIiBmaWxsPSIjRUZFOERCIi8+CiAgPHJlY3QgaWQ9ImZpZWxkIiB4PSIwIiB5PSIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjE2IiBmaWxsPSIjMkY1RDhDIi8+CgogIDwhLS0g5bGCIDHvvJrlnZDmoIfnurggLS0+CiAgPHJlY3QgeD0iNjQiIHk9IjE2IiB3aWR0aD0iNTI4IiBoZWlnaHQ9IjEwOCIgZmlsbD0iI0ZGRkZGRiIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8ZyBzdHJva2U9IiM4RkI0REMiIHN0cm9rZS13aWR0aD0iMiI+CiAgICA8cGF0aCBkPSJNMTA4IDE2djExOE0xNTIgMTZ2MTE4TTE5NiAxNnYxMThNMjQwIDE2djExOE0yODQgMTZ2MTE4TTMyOCAxNnYxMThNMzcyIDE2djExOE00MTYgMTZ2MTE4TTQ2MCAxNnYxMThNNTA0IDE2djExOE01NDggMTZ2MTE4Ii8+CiAgICA8cGF0aCBkPSJNNjQgNDVoNTI4TTY0IDc0aDUyOE02NCAxMDNoNTI4Ii8+CiAgPC9nPgoKICA8IS0tIOWxgiAy77ya5Z2Q5qCH6L2077yI5LiN5Yqg5Lu75L2V5pWw5o2u54K54oCU4oCU56m655+p6Zi15oiW56S65oSP54K55Lya6KKr6K+v6K+75Li644CM5YWo5piv6Zu25oqV5YWl44CN77yMCiAgICAgICDop4EgZG9jcy/orr7orqEv5YWz6ZSu6aG16Z2i6auY5L+d55yf6K+05piOLm1kIOa0nuWvn+mhteepuuaAgee6puWumu+8iSAtLT4KICA8cGF0aCBkPSJNNzYgMTJ2MTAwaDUwOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiCiAgICAgICAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+CiAgPHBhdGggZD0iTTU3NiAxMDR2MTZNNzYgMTJ2LTgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSI0IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNzYgMTEyIDc2IDk0IDk0IDExMloiIGZpbGw9IiMxRjZCNjMiLz4KCiAgPCEtLSDlsYIgM++8muWcsOmdoiAtLT4KICA8cmVjdCBpZD0iZmxvb3IiIHg9IjAiIHk9IjEzOCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSIxODIiIGZpbGw9IiNGNUYwRTgiLz4KCiAgPCEtLSDkuJ3nvZHpopfnspLvvJrlj6rlnKjnurjpnaLkuI7nlZnnmb3lhoUgLS0+CiAgPGcgaWQ9ImdyYWluIiBmaWxsPSIjN0Y4QTkyIiBvcGFjaXR5PSIwLjMiPgogICAgPGNpcmNsZSBjeD0iMjYiIGN5PSIxNzAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjQwIiBjeT0iMTE4IiByPSIxLjciLz48Y2lyY2xlIGN4PSI2MjQiIGN5PSIxMTgiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iODgiIGN5PSIzNCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMzM2IiBjeT0iNjAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjU2MCIgY3k9Ijg4IiByPSIxLjciLz4KICA8L2c+Cjwvc3ZnPgo=",
+  "empty_records": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NTYgMzIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjMyMCI+CiAgPCEtLSBlbXB0eV9yZWNvcmRzIOKAlCDnqbrmgIHvvJrmnKrliLvluqbnmoTlsLrjgILljp/liJvnn6Lph4/mj5LnlLvvvIzop4EgZG9jcy/orr7orqEv57Sg5p2Q5p2D5Yip5riF5Y2VLm1kIC0tPgogIDxyZWN0IGlkPSJiZyIgeD0iMCIgeT0iMCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSIzMjAiIGZpbGw9IiNFRkU4REIiLz4KCiAgPCEtLSDlsYIgMe+8mumhtuW4piAtLT4KICA8cmVjdCBpZD0iYmFuZCIgeD0iMCIgeT0iMCIgd2lkdGg9IjY1NiIgaGVpZ2h0PSI2MCIgZmlsbD0iIzFGNkI2MyIvPgoKICA8IS0tIOWbvuW9oue7hOaVtOS9k+S4iuenu++8jOS9v+a3seiJsui9ruW7k+WFqOmDqOaUtuWcqCB5PDEyOO+8iOW6lemDqCA5NmRwIOaWh+Wtl+WuieWFqOWMuuS4iuaWue+8iSAtLT4KICA8ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwLC0xNCkiPgogIDwhLS0g5bGCIDLvvJrlsLrouqvvvIjmnKrliLvluqbvvIkgLS0+CiAgPHJlY3QgeD0iNTYiIHk9IjY2IiB3aWR0aD0iNTQ0IiBoZWlnaHQ9IjQ4IiBmaWxsPSIjRDhCMjY3IiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iNCIvPgogIDxyZWN0IHg9IjU2IiB5PSIxMTQiIHdpZHRoPSI1NDQiIGhlaWdodD0iNyIgZmlsbD0iIzdBNTQxMCIgb3BhY2l0eT0iMC40Ii8+CiAgPGNpcmNsZSBjeD0iODQiIGN5PSI5MCIgcj0iOSIgZmlsbD0iI0VGRThEQiIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8cGF0aCBkPSJNMTIwIDY2djE2TTUzNiA5OHYxNiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIOWxgiAz77ya5Y+z56uv6YeP5bqm5omY5p62IC0tPgogIDxwYXRoIGQ9Ik02MTIgNjZ2NDhNNjA0IDY2aDE2TTYwNCAxMTRoMTYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzFGNkI2MyIKICAgICAgICBzdHJva2Utd2lkdGg9IjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgoKICA8IS0tIOWxgiA077ya5pCB5Zyo5LiA5peB55qE56yUIC0tPgogIDxwYXRoIGQ9Ik05NiAxMzIgMjAwIDExOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMUY2QjYzIiBzdHJva2Utd2lkdGg9IjkiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik0yMDAgMTE4IDIxNiAxMTQgMjA4IDEyOFoiIGZpbGw9IiNFRkU4REIiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgPC9nPgoKICA8IS0tIOWxgiA177ya5Zyw6Z2iIC0tPgogIDxyZWN0IGlkPSJmbG9vciIgeD0iMCIgeT0iMTQwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjE4MCIgZmlsbD0iI0Y1RjBFOCIvPgoKICA8IS0tIOS4nee9kemil+eyku+8muWPquWcqOmhtuW4puS4jueVmeeZveWGhSAtLT4KICA8ZyBpZD0iZ3JhaW4iIGZpbGw9IiMxNjRGNDkiIG9wYWNpdHk9IjAuNCI+CiAgICA8Y2lyY2xlIGN4PSI0MCIgY3k9IjE2IiByPSIxLjciLz48Y2lyY2xlIGN4PSIxNDAiIGN5PSIzOCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMjQwIiBjeT0iMTQiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iMzQwIiBjeT0iNDAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjQ0MCIgY3k9IjE2IiByPSIxLjciLz48Y2lyY2xlIGN4PSI1NDAiIGN5PSIzOCIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI2MjgiIGN5PSIxNiIgcj0iMS43Ii8+CiAgPC9nPgogIDxnIGZpbGw9IiM3RjhBOTIiIG9wYWNpdHk9IjAuMzIiPgogICAgPGNpcmNsZSBjeD0iMjQiIGN5PSI4NiIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMzAiIGN5PSIxMjgiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjI4OCIgY3k9IjEzMiIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI0MDAiIGN5PSIxMzQiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjUwMCIgY3k9IjEzMCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNjMyIiBjeT0iODYiIHI9IjEuNyIvPgogIDwvZz4KPC9zdmc+Cg==",
+  "empty_today": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NTYgMzIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjMyMCI+CiAgPCEtLSBlbXB0eV90b2RheSDigJQg56m65oCB77ya56m655S75p6277yL5LiA5byg5b6F5YaZ55qE57q444CC5Y6f5Yib55+i6YeP5o+S55S777yM6KeBIGRvY3Mv6K6+6K6hL+e0oOadkOadg+WIqea4heWNlS5tZCAtLT4KICA8cmVjdCBpZD0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMzIwIiBmaWxsPSIjRUZFOERCIi8+CgogIDwhLS0g5bGCIDHvvJrlopnpnaLlnLrvvIjkuIvovrnnlYzmlLblnKggeT0xMjjvvIzljbPlupXpg6ggOTZkcCDmloflrZflronlhajljLrpobbovrnvvIkgLS0+CiAgPHJlY3QgaWQ9IndhbGwiIHg9IjAiIHk9IjAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMTI4IiBmaWxsPSIjMkY1RDhDIi8+CiAgPHJlY3QgaWQ9IndhbGxTaGlmdCIgeD0iMCIgeT0iMTE4IiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjEwIiBmaWxsPSIjMjU1MTdCIi8+CiAgPHJlY3QgaWQ9ImZsb29yIiB4PSIwIiB5PSIxMjgiIHdpZHRoPSI2NTYiIGhlaWdodD0iMTkyIiBmaWxsPSIjRjVGMEU4Ii8+CgogIDwhLS0g5Zu+5b2i57uE5pW05L2T5LiK56e777yM5L2/5rex6Imy6L2u5buT5YWo6YOo5pS25ZyoIHk8MTI477yI5bqV6YOoIDk2ZHAg5paH5a2X5a6J5YWo5Yy65LiK5pa577yJIC0tPgogIDxnIHRyYW5zZm9ybT0idHJhbnNsYXRlKDAsLTE0KSI+CiAgPCEtLSDlsYIgMu+8mueUu+aetiAtLT4KICA8cGF0aCBkPSJNMzAwIDEzMiAzMzAgMTQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzdBNTQxMCIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNMjEwIDEzMiAxNzYgMTQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzdBNTQxMCIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNMzcyIDEzMiA0MDYgMTQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzdBNTQxMCIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNMTg2IDEwOEg1MDAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzdBNTQxMCIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KCiAgPCEtLSDlsYIgM++8muW+heWGmeeahOe6uCAtLT4KICA8cmVjdCB4PSIyMTQiIHk9IjI0IiB3aWR0aD0iMTU2IiBoZWlnaHQ9Ijg0IiBmaWxsPSIjRkZGRkZGIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iNCIvPgogIDxwYXRoIGQ9Ik0yMzYgNTZoMTEyTTIzNiA3NmgxMTJNMjM2IDk2aDY0IiBmaWxsPSJub25lIiBzdHJva2U9IiM1RjZFNzgiCiAgICAgICAgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KCiAgPCEtLSDlsYIgNO+8mueslOS4juWFieeCuSAtLT4KICA8cGF0aCBkPSJNNDIwIDEwNiA1MDAgODgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0I2NDkzMSIgc3Ryb2tlLXdpZHRoPSI5IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNNTAwIDg4IDUxOCA4NCA1MDggOThaIiBmaWxsPSIjRUZFOERCIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iMyIvPgogIDxjaXJjbGUgY3g9IjU2NiIgY3k9IjQ2IiByPSIyNCIgZmlsbD0iI0Q4QjI2NyIvPgogIDwvZz4KCiAgPCEtLSDkuJ3nvZHpopfnspLvvJrlj6rlnKjlopnpnaLoibLlnZflhoXpg6ggLS0+CiAgPGcgaWQ9ImdyYWluIiBmaWxsPSIjMjU1MTdCIiBvcGFjaXR5PSIwLjQiPgogICAgPGNpcmNsZSBjeD0iNDAiIGN5PSIzMCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iOTIiIGN5PSI3NiIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMTQwIiBjeT0iMjYiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iMTAwIiBjeT0iMTE4IiByPSIxLjciLz48Y2lyY2xlIGN4PSIxODgiIGN5PSI2MCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iMjQ4IiBjeT0iMTQiIHI9IjEuNyIvPgogICAgPGNpcmNsZSBjeD0iNDUyIiBjeT0iMzAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjUwMCIgY3k9Ijc2IiByPSIxLjciLz48Y2lyY2xlIGN4PSI2MTIiIGN5PSIzNCIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSI2NDAiIGN5PSI5OCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNDM2IiBjeT0iMTE4IiByPSIxLjciLz48Y2lyY2xlIGN4PSIzNTIiIGN5PSIxNiIgcj0iMS43Ii8+CiAgPC9nPgo8L3N2Zz4K",
+  "placeholder_missing": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMTYgMjE2IiB3aWR0aD0iMjE2IiBoZWlnaHQ9IjIxNiI+CiAgPCEtLSBwbGFjZWhvbGRlcl9taXNzaW5nIOKAlCDpgIDljJbop4bop4nvvJrooqvmkpXljrvkuIDop5LnmoTnurjjgILljp/liJvnn6Lph4/mj5LnlLvvvIzop4EgZG9jcy/orr7orqEv57Sg5p2Q5p2D5Yip5riF5Y2VLm1kIC0tPgogIDxyZWN0IGlkPSJiZyIgeD0iMCIgeT0iMCIgd2lkdGg9IjIxNiIgaGVpZ2h0PSIyMTYiIGZpbGw9IiNFRkU4REIiLz4KCiAgPCEtLSDlsYIgMe+8mue8uuinkueahOe6uCAtLT4KICA8cGF0aCBkPSJNNDAgNjYgNjIgNDRIMTMyVjE3Mkg0MFoiIGZpbGw9IiNGRkZGRkYiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSI0Ii8+CgogIDwhLS0g5bGCIDLvvJrmkpXljrvpgqPkuIDop5LnmoTmrovnlZnova7lu5MgLS0+CiAgPHBhdGggZD0iTTQwIDQ0aDIyTTQwIDQ0djIyIiBmaWxsPSJub25lIiBzdHJva2U9IiM3RjhBOTIiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CgogIDwhLS0g5bGCIDPvvJrmkpXlj6PnuqTnu7QgLS0+CiAgPHBhdGggZD0iTTQ2IDYwIDQwIDU2TTUyIDU0IDQ4IDQ3TTU4IDQ4IDU1IDQyIiBmaWxsPSJub25lIiBzdHJva2U9IiM1RjZFNzgiCiAgICAgICAgc3Ryb2tlLXdpZHRoPSIyLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIOWxgiA077ya57q45LiK55qE5a2X6L+55q6L55WZIC0tPgogIDxwYXRoIGQ9Ik01NiA5Mmg2ME01NiAxMTJoNjBNNTYgMTMyaDQ0TTU2IDE1MmgyOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjN0Y4QTkyIgogICAgICAgIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CgogIDwhLS0g5Lid572R6aKX57KS77ya5Y+q5Zyo57q46Z2i5YaF6YOo77yM5Y+z5L6nIDI0ZHAg6Z2Z5Yy65L+d5oyB5bmz5pW0IC0tPgogIDxnIGlkPSJncmFpbiIgZmlsbD0iIzdGOEE5MiIgb3BhY2l0eT0iMC4zIj4KICAgIDxjaXJjbGUgY3g9IjIwIiBjeT0iMzYiIHI9IjEuNiIvPjxjaXJjbGUgY3g9IjE2IiBjeT0iMTIwIiByPSIxLjYiLz48Y2lyY2xlIGN4PSIyNCIgY3k9IjE5NiIgcj0iMS42Ii8+CiAgICA8Y2lyY2xlIGN4PSI2NiIgY3k9IjIwNCIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iMTIwIiBjeT0iMjA0IiByPSIxLjYiLz48Y2lyY2xlIGN4PSIxMjgiIGN5PSIzNiIgcj0iMS42Ii8+CiAgICA8Y2lyY2xlIGN4PSI5NiIgY3k9IjIwMCIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iMTM0IiBjeT0iMTUyIiByPSIxLjYiLz4KICA8L2c+Cjwvc3ZnPgo=",
+  "recovery_abnormal": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NTYgMzIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjMyMCI+CiAgPCEtLSByZWNvdmVyeV9hYm5vcm1hbCDigJQg5byC5bi45oGi5aSN77ya5pat5byA55qE5oqY57q/6KKr6YeN5paw5o6l5LiK44CC5Y6f5Yib55+i6YeP5o+S55S777yM6KeBIGRvY3Mv6K6+6K6hL+e0oOadkOadg+WIqea4heWNlS5tZCAtLT4KICA8cmVjdCBpZD0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSI2NTYiIGhlaWdodD0iMzIwIiBmaWxsPSIjRUZFOERCIi8+CiAgPHJlY3QgaWQ9ImZpZWxkIiB4PSIwIiB5PSIwIiB3aWR0aD0iNjU2IiBoZWlnaHQ9IjE0MiIgZmlsbD0iI0ZCRjhGMiIvPgoKICA8IS0tIOWbvuW9oue7hOaVtOS9k+S4iuenu++8jOS9v+a3seiJsui9ruW7k+WFqOmDqOaUtuWcqCB5PDEyOO+8iOW6lemDqCA5NmRwIOaWh+Wtl+WuieWFqOWMuuS4iuaWue+8iSAtLT4KICA8ZyB0cmFuc2Zvcm09InRyYW5zbGF0ZSgwLC0xMykiPgogIDwhLS0g5bGCIDHvvJrln7rnur8gLS0+CiAgPHBhdGggZD0iTTQ4IDEzMEg2MDgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIiBvcGFjaXR5PSIwLjUiLz4KICA8cGF0aCBkPSJNMTA0IDEzMHYxME0yMTYgMTMwdjEwTTMyOCAxMzB2MTBNNDQwIDEzMHYxME01NTIgMTMwdjEwIiBmaWxsPSJub25lIgogICAgICAgIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIiBvcGFjaXR5PSIwLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIOWxgiAy77ya5bey6K6w5b2V55qE5LiA5q6177yI6ZK06JOd77yJIC0tPgogIDxwYXRoIGQ9Ik01NiAxMTggMTM2IDgyIDIxNiAxMDQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJGNUQ4QyIgc3Ryb2tlLXdpZHRoPSI2IgogICAgICAgIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDxjaXJjbGUgY3g9IjU2IiBjeT0iMTE4IiByPSI1IiBmaWxsPSIjMTkyQzNCIi8+CiAgPGNpcmNsZSBjeD0iMTM2IiBjeT0iODIiIHI9IjUiIGZpbGw9IiMxOTJDM0IiLz4KCiAgPCEtLSDlsYIgM++8muW+heehruiupOeahOaOqOeul+epuuaho++8iOa1heiJsui/nuaOpe+8jOS4jeS7o+ihqOW3suaKleWFpe+8iSAtLT4KICA8cGF0aCBkPSJNMjE2IDEwNCAzMDAgNjAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzVGNkU3OCIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8Y2lyY2xlIGN4PSIyMTYiIGN5PSIxMDQiIHI9IjkiIGZpbGw9IiNGQkY4RjIiIHN0cm9rZT0iI0I2NDkzMSIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPGNpcmNsZSBjeD0iMzAwIiBjeT0iNjAiIHI9IjkiIGZpbGw9IiNGQkY4RjIiIHN0cm9rZT0iI0I2NDkzMSIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPHBhdGggZD0iTTI1OCA0MCAyNzMgNjYgMjQzIDY2WiIgZmlsbD0iI0I2NDkzMSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjMiCiAgICAgICAgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgoKICA8IS0tIOWxgiA077ya6YeN5paw5o6l5LiK55qE5LiA5q6177yI6Z2S57u/77yJIC0tPgogIDxwYXRoIGQ9Ik0zMDAgNjAgMzgwIDk2IDQ2MCA1OCA1NDAgNzQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzFGNkI2MyIgc3Ryb2tlLXdpZHRoPSI2IgogICAgICAgIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogIDxjaXJjbGUgY3g9IjM4MCIgY3k9Ijk2IiByPSI1IiBmaWxsPSIjMTkyQzNCIi8+CiAgPGNpcmNsZSBjeD0iNDYwIiBjeT0iNTgiIHI9IjUiIGZpbGw9IiMxOTJDM0IiLz4KICA8Y2lyY2xlIGN4PSI1NDAiIGN5PSI3NCIgcj0iNSIgZmlsbD0iIzE5MkMzQiIvPgogIDwvZz4KCiAgPCEtLSDlsYIgNe+8muWcsOmdoiAtLT4KICA8cmVjdCBpZD0iZmxvb3IiIHg9IjAiIHk9IjE0MiIgd2lkdGg9IjY1NiIgaGVpZ2h0PSIxNzgiIGZpbGw9IiNGNUYwRTgiLz4KCiAgPCEtLSDkuJ3nvZHpopfnspLvvJrlj6rlnKjnlZnnmb3lhoUgLS0+CiAgPGcgaWQ9ImdyYWluIiBmaWxsPSIjN0Y4QTkyIiBvcGFjaXR5PSIwLjMyIj4KICAgIDxjaXJjbGUgY3g9IjI0IiBjeT0iMjAiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjEyMCIgY3k9IjE0IiByPSIxLjciLz48Y2lyY2xlIGN4PSIxOTYiIGN5PSIxOCIgcj0iMS43Ii8+CiAgICA8Y2lyY2xlIGN4PSIzNDAiIGN5PSIxNCIgcj0iMS43Ii8+PGNpcmNsZSBjeD0iNDIwIiBjeT0iMTgiIHI9IjEuNyIvPjxjaXJjbGUgY3g9IjU5NiIgY3k9IjIwIiByPSIxLjciLz4KICAgIDxjaXJjbGUgY3g9IjYzNiIgY3k9Ijk2IiByPSIxLjciLz48Y2lyY2xlIGN4PSIyNCIgY3k9Ijk4IiByPSIxLjciLz48Y2lyY2xlIGN4PSI2NDAiIGN5PSIxMzIiIHI9IjEuNyIvPgogIDwvZz4KPC9zdmc+Cg==",
+  "state_completed": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMTYgMjE2IiB3aWR0aD0iMjE2IiBoZWlnaHQ9IjIxNiI+CiAgPCEtLSBzdGF0ZV9jb21wbGV0ZWQg4oCUIOWujOaIkOaAge+8muWQiOS4iueahOacrOWtkO+8i+acseegguWNsOOAguWOn+WIm+efoumHj+aPkueUu++8jOingSBkb2NzL+iuvuiuoS/ntKDmnZDmnYPliKnmuIXljZUubWQgLS0+CiAgPHJlY3QgaWQ9ImJnIiB4PSIwIiB5PSIwIiB3aWR0aD0iMjE2IiBoZWlnaHQ9IjIxNiIgZmlsbD0iI0VGRThEQiIvPgoKICA8IS0tIOWxgiAx77ya5Lmm6aG15LiO5bCB6Z2iIC0tPgogIDxyZWN0IHg9IjExOCIgeT0iNjIiIHdpZHRoPSIxNCIgaGVpZ2h0PSIxMTIiIGZpbGw9IiNGNUYwRTgiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPHBhdGggZD0iTTExOCA2NmgxNE0xMTggODhoMTRNMTE4IDExMGgxNE0xMTggMTMyaDE0TTExOCAxNTRoMTQiIGZpbGw9Im5vbmUiCiAgICAgICAgc3Ryb2tlPSIjN0Y4QTkyIiBzdHJva2Utd2lkdGg9IjIuNSIvPgogIDxyZWN0IHg9IjIyIiB5PSI2MiIgd2lkdGg9Ijk4IiBoZWlnaHQ9IjExMiIgZmlsbD0iIzJGNUQ4QyIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8cmVjdCB4PSIyMiIgeT0iNjIiIHdpZHRoPSIxNiIgaGVpZ2h0PSIxMTIiIGZpbGw9IiMyNTUxN0IiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSI0Ii8+CgogIDwhLS0g5bGCIDLvvJrkuabohIrljovnur/kuI7kuablkI3mnaEgLS0+CiAgPHBhdGggZD0iTTU2IDg0aDQ4TTU2IDEwMGg0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOEZCNERDIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik01NiAxMjJoNDhNNTYgMTM4aDMwIiBmaWxsPSJub25lIiBzdHJva2U9IiM4RkI0REMiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CgogIDwhLS0g5bGCIDPvvJrkuabnrb7luKYgLS0+CiAgPHBhdGggZD0iTTg2IDYydi0yMmwxMCA4IDEwLTh2MjIiIGZpbGw9IiNEOEIyNjciIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSI0Ii8+CgogIDwhLS0g5bGCIDTvvJrmnLHnoILljbAgLS0+CiAgPGNpcmNsZSBjeD0iOTYiIGN5PSIxNTgiIHI9IjIyIiBmaWxsPSIjQjY0OTMxIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iNCIvPgogIDxyZWN0IHg9Ijg2IiB5PSIxNDgiIHdpZHRoPSIyMCIgaGVpZ2h0PSIyMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRkZGRkZGIiBzdHJva2Utd2lkdGg9IjQiLz4KCiAgPCEtLSDkuJ3nvZHpopfnspLvvJrlj6rokL3lnKjlsIHpnaLoibLlnZflhoXpg6jvvIzlj7PkvqcgMjRkcCDpnZnljLrkv53mjIHlubPmlbQgLS0+CiAgPGcgaWQ9ImdyYWluIiBmaWxsPSIjMjU1MTdCIiBvcGFjaXR5PSIwLjUiPgogICAgPGNpcmNsZSBjeD0iNDYiIGN5PSI3NiIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iNzIiIGN5PSI3MCIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iMTA0IiBjeT0iNzgiIHI9IjEuNiIvPgogICAgPGNpcmNsZSBjeD0iNDYiIGN5PSIxMTIiIHI9IjEuNiIvPjxjaXJjbGUgY3g9IjEwOCIgY3k9IjExNiIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iNDYiIGN5PSIxNTIiIHI9IjEuNiIvPgogICAgPGNpcmNsZSBjeD0iMTEyIiBjeT0iMTYwIiByPSIxLjYiLz48Y2lyY2xlIGN4PSIyMCIgY3k9IjQwIiByPSIxLjYiLz48Y2lyY2xlIGN4PSIxMzYiIGN5PSI0NCIgcj0iMS42Ii8+CiAgICA8Y2lyY2xlIGN4PSIyMCIgY3k9IjE5NiIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iNzAiIGN5PSIyMDAiIHI9IjEuNiIvPjxjaXJjbGUgY3g9IjEyNiIgY3k9IjE5NiIgcj0iMS42Ii8+CiAgPC9nPgo8L3N2Zz4K",
+  "state_focusing": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMTYgMjE2IiB3aWR0aD0iMjE2IiBoZWlnaHQ9IjIxNiI+CiAgPCEtLSBzdGF0ZV9mb2N1c2luZyDigJQg6K6h5pe25Lit77ya5ZCM5b+D5ZyG44CC5Y6f5Yib55+i6YeP5o+S55S777yM6KeBIGRvY3Mv6K6+6K6hL+e0oOadkOadg+WIqea4heWNlS5tZCAtLT4KICA8cmVjdCBpZD0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIyMTYiIGhlaWdodD0iMjE2IiBmaWxsPSIjRUZFOERCIi8+CgogIDwhLS0g5bGCIDHvvJrlkIzlv4Pliqjlir/njq/vvIzmr4/njq/nlZnnvLrlj6PooajnpLrov5vooYzkuK0gLS0+CiAgPHBhdGggZD0iTTE5LjQgODYuOEE1NiA1NiAwIDAgMSA4MS43IDUwLjkiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJGNUQ4QyIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNMTExLjUgMTIwLjRBNDIgNDIgMCAxIDEgNTcuNiA2Ni41IiBmaWxsPSJub25lIiBzdHJva2U9IiM1RTk5OTMiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTTUwLjYgMTI0QTI4IDI4IDAgMSAxIDg2IDEzMC4yIiBmaWxsPSJub25lIiBzdHJva2U9IiMxRjZCNjMiIHN0cm9rZS13aWR0aD0iNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPGNpcmNsZSBjeD0iNzIiIGN5PSIxMDYiIHI9IjEzIiBmaWxsPSIjMUY2QjYzIi8+CgogIDwhLS0g5bGCIDLvvJrokL3mspkgLS0+CiAgPGNpcmNsZSBjeD0iMTA0IiBjeT0iMTcwIiByPSI0IiBmaWxsPSIjNUU5OTkzIi8+CiAgPGNpcmNsZSBjeD0iMTE4IiBjeT0iMTgyIiByPSI0IiBmaWxsPSIjNUU5OTkzIi8+CiAgPGNpcmNsZSBjeD0iMTMyIiBjeT0iMTkyIiByPSI0IiBmaWxsPSIjQTJDOEMyIi8+CiAgPHBhdGggZD0iTTEwMCAxNTggMTE2IDE2OCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjNUU5OTkzIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIOWxgiAz77ya6LW354K55Yi75bqmIC0tPgogIDxwYXRoIGQ9Ik03MiAyNnYxMk03MiAxNzR2MTJNMjggMTA2aDEyTTEwNCAxMDZoMTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzdGOEE5MiIKICAgICAgICBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIOS4nee9kemil+eyku+8muWPs+S+pyAyNGRwIOmdmeWMuuS/neaMgeW5s+aVtCAtLT4KICA8ZyBpZD0iZ3JhaW4iIGZpbGw9IiM3RjhBOTIiIG9wYWNpdHk9IjAuMzUiPgogICAgPGNpcmNsZSBjeD0iMjAiIGN5PSIzNiIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iNTQiIGN5PSIyMCIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iMTIwIiBjeT0iMjgiIHI9IjEuNiIvPgogICAgPGNpcmNsZSBjeD0iMjYiIGN5PSIxOTQiIHI9IjEuNiIvPjxjaXJjbGUgY3g9IjU4IiBjeT0iMjAyIiByPSIxLjYiLz48Y2lyY2xlIGN4PSIxMzQiIGN5PSIxMjAiIHI9IjEuNiIvPgogICAgPGNpcmNsZSBjeD0iMTYiIGN5PSIxNDAiIHI9IjEuNiIvPjxjaXJjbGUgY3g9IjEyNiIgY3k9IjY0IiByPSIxLjYiLz4KICA8L2c+Cjwvc3ZnPgo=",
+  "state_paused": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMTYgMjE2IiB3aWR0aD0iMjE2IiBoZWlnaHQ9IjIxNiI+CiAgPCEtLSBzdGF0ZV9wYXVzZWQg4oCUIOaaguWBnO+8muWNiuW8gOeahOmXqO+8j+mdmeatouaMh+mSiOOAguWOn+WIm+efoumHj+aPkueUu++8jOingSBkb2NzL+iuvuiuoS/ntKDmnZDmnYPliKnmuIXljZUubWQgLS0+CiAgPHJlY3QgaWQ9ImJnIiB4PSIwIiB5PSIwIiB3aWR0aD0iMjE2IiBoZWlnaHQ9IjIxNiIgZmlsbD0iI0VGRThEQiIvPgoKICA8IS0tIOWxgiAx77ya6Zeo5rSeIC0tPgogIDxwYXRoIGQ9Ik0yMCAxOTJWODRhNjAgNjAgMCAwIDEgMTIwIDB2MTA4eiIgZmlsbD0iI0U2REVEMCIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiLz4KCiAgPCEtLSDlsYIgMu+8mumdmeatouaMh+mSiCAtLT4KICA8Y2lyY2xlIGN4PSI3MCIgY3k9IjQ0IiByPSIxMSIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8cGF0aCBkPSJNNzAgNDRWMzZNNzAgNDRoOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMkY1RDhDIiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIOWxgiAz77ya5Lik5omH5YGc5Zyo5Y2K5byA55qE6ZeoIC0tPgogIDxyZWN0IHg9IjQ2IiB5PSI2NCIgd2lkdGg9IjMwIiBoZWlnaHQ9IjExNCIgcng9IjYiIGZpbGw9IiMyRjVEOEMiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPHJlY3QgeD0iOTAiIHk9IjY0IiB3aWR0aD0iMzAiIGhlaWdodD0iMTE0IiByeD0iNiIgZmlsbD0iI0Q4QjI2NyIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8cGF0aCBkPSJNOTggNzYgMTEyIDcyTTk4IDk0IDExMiA5MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjN0E1NDEwIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIOWxgiA077ya5Zyw6Z2i57q/IC0tPgogIDwhLS0g5Zyw6Z2i57q/5pS25ZyoIHg9MTQwIOS7peWGhe+8jOWPs+S+pyAyNGRwIOmdmeWMuuS/neaMgeW5suWHgO+8iOiuvuiuoeezu+e7nyDCpzcuMiBjYXJkIOW4p++8iSAtLT4KICA8cGF0aCBkPSJNMTQgMTkyaDEyNiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIOS4nee9kemil+eyku+8muWPquiQveWcqOmXqOa0nuiJsuWdl+WGhemDqO+8jOWPs+S+pyAyNGRwIOmdmeWMuuS/neaMgeW5s+aVtCAtLT4KICA8ZyBpZD0iZ3JhaW4iIGZpbGw9IiM3RjhBOTIiIG9wYWNpdHk9IjAuNCI+CiAgICA8Y2lyY2xlIGN4PSIzMiIgY3k9Ijk2IiByPSIxLjYiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjEyOCIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iNjAiIGN5PSIxNjAiIHI9IjEuNiIvPgogICAgPGNpcmNsZSBjeD0iMTEyIiBjeT0iMTY0IiByPSIxLjYiLz48Y2lyY2xlIGN4PSIxMjgiIGN5PSIxMDAiIHI9IjEuNiIvPjxjaXJjbGUgY3g9IjEyOCIgY3k9IjE0MCIgcj0iMS42Ii8+CiAgICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjE3NiIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iODQiIGN5PSIxOTAiIHI9IjEuNiIvPgogICAgPGNpcmNsZSBjeD0iMTM2IiBjeT0iMjAiIHI9IjEuNiIvPjxjaXJjbGUgY3g9IjE4IiBjeT0iMjgiIHI9IjEuNiIvPgogIDwvZz4KPC9zdmc+Cg==",
+  "task_daily": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMTYgMjE2IiB3aWR0aD0iMjE2IiBoZWlnaHQ9IjIxNiI+CiAgPCEtLSB0YXNrX2RhaWx5IOKAlCDml6XluLjku7vliqHvvJrml6XljobmoLzkuI7lj7bjgILljp/liJvnn6Lph4/mj5LnlLvvvIzop4EgZG9jcy/orr7orqEv57Sg5p2Q5p2D5Yip5riF5Y2VLm1kIC0tPgogIDxyZWN0IGlkPSJiZyIgeD0iMCIgeT0iMCIgd2lkdGg9IjIxNiIgaGVpZ2h0PSIyMTYiIGZpbGw9IiNFRkU4REIiLz4KCiAgPCEtLSDlsYIgMe+8muaXpeWOhiAtLT4KICA8cmVjdCB4PSIxNiIgeT0iNDYiIHdpZHRoPSIxMTIiIGhlaWdodD0iMTA2IiBmaWxsPSIjRkZGRkZGIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iNCIvPgogIDxyZWN0IHg9IjE2IiB5PSI0NiIgd2lkdGg9IjExMiIgaGVpZ2h0PSIyNiIgZmlsbD0iIzdBNTQxMCIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8cGF0aCBkPSJNNDQgMzR2MThNMTAwIDM0djE4IiBmaWxsPSJub25lIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTTUzIDcydjgwTTkwIDcydjgwTTE2IDk4aDExMk0xNiAxMjRoMTEyIiBmaWxsPSJub25lIiBzdHJva2U9IiM1RjZFNzgiIHN0cm9rZS13aWR0aD0iMi41Ii8+CgogIDwhLS0g5bGCIDLvvJrml6XmnJ/moLwgLS0+CiAgPHJlY3QgeD0iMjUiIHk9Ijc4IiB3aWR0aD0iMjAiIGhlaWdodD0iMTIiIGZpbGw9IiNBMkM4QzIiLz4KICA8cmVjdCB4PSI2MiIgeT0iNzgiIHdpZHRoPSIyMCIgaGVpZ2h0PSIxMiIgZmlsbD0iI0EyQzhDMiIvPgogIDxyZWN0IHg9Ijk5IiB5PSI3OCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjEyIiBmaWxsPSIjNUU5OTkzIi8+CiAgPHJlY3QgeD0iMjUiIHk9IjEwNCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjEyIiBmaWxsPSIjQTJDOEMyIi8+CiAgPHJlY3QgeD0iNjIiIHk9IjEwNCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjEyIiBmaWxsPSIjMUY2QjYzIi8+CiAgPHJlY3QgeD0iOTkiIHk9IjEwNCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjEyIiBmaWxsPSIjQTJDOEMyIi8+CiAgPHJlY3QgeD0iMjUiIHk9IjEzMCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjEyIiBmaWxsPSIjQTJDOEMyIi8+CiAgPHJlY3QgeD0iNjIiIHk9IjEzMCIgd2lkdGg9IjIwIiBoZWlnaHQ9IjEyIiBmaWxsPSIjQTJDOEMyIi8+CgogIDwhLS0g5bGCIDPvvJrlj7bvvIjohInnu5zlhajpg6jmlLblnKjlj7blvaLlhoXpg6jvvIzpgb/lhY3nur/mnaHlpJbmuqLvvIkgLS0+CiAgPHBhdGggZD0iTTg0IDE0MEMxMTQgMTI4IDE0MCAxNTIgMTMyIDE4NiAxMDQgMTk0IDgwIDE3MCA4NCAxNDBaIiBmaWxsPSIjMUY2QjYzIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iNCIvPgogIDxwYXRoIGQ9Ik04OCAxNDYgMTI4IDE4MiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRTdFRkU2IiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgogIDxwYXRoIGQ9Ik0xMDIgMTU4IDk0IDE2Nk0xMTQgMTY5IDEwNiAxNzciIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0U3RUZFNiIKICAgICAgICBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIOS4nee9kemil+eyku+8muWPs+S+pyAyNGRwIOmdmeWMuuS/neaMgeW5s+aVtCAtLT4KICA8ZyBpZD0iZ3JhaW4iIGZpbGw9IiM3RjhBOTIiIG9wYWNpdHk9IjAuMzUiPgogICAgPGNpcmNsZSBjeD0iMTgiIGN5PSIyOCIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iNTIiIGN5PSIyMCIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iODYiIGN5PSIyNiIgcj0iMS42Ii8+CiAgICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjE5NiIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iNTYiIGN5PSIyMDQiIHI9IjEuNiIvPjxjaXJjbGUgY3g9IjEyNiIgY3k9IjIyIiByPSIxLjYiLz4KICAgIDxjaXJjbGUgY3g9IjMwIiBjeT0iMTY4IiByPSIxLjYiLz48Y2lyY2xlIGN4PSIxMiIgY3k9Ijc2IiByPSIxLjYiLz4KICA8L2c+Cjwvc3ZnPgo=",
+  "task_temporary": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMTYgMjE2IiB3aWR0aD0iMjE2IiBoZWlnaHQ9IjIxNiI+CiAgPCEtLSB0YXNrX3RlbXBvcmFyeSDigJQg5Li05pe25Lu75Yqh77ya6aOY6JC955qE5L6/562+44CC5Y6f5Yib55+i6YeP5o+S55S777yM6KeBIGRvY3Mv6K6+6K6hL+e0oOadkOadg+WIqea4heWNlS5tZCAtLT4KICA8cmVjdCBpZD0iYmciIHg9IjAiIHk9IjAiIHdpZHRoPSIyMTYiIGhlaWdodD0iMjE2IiBmaWxsPSIjRUZFOERCIi8+CgogIDwhLS0g6JC95LiL55qE5Yqo5Yq/IC0tPgogIDxwYXRoIGQ9Ik01MiAyMiA0NCAzNE03NiAxNiA3NCAzME0xMDAgMjIgOTggMzYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzVGNkU3OCIKICAgICAgICBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIvPgoKICA8IS0tIOWxgiAx77ya5ZCO5o6S5L6/562+IC0tPgogIDxwYXRoIGQ9Ik0zNCA1OCAxMDAgNDQgMTI2IDc0IDYwIDg4WiIgZmlsbD0iI0Q4QjI2NyIgc3Ryb2tlPSIjMTkyQzNCIiBzdHJva2Utd2lkdGg9IjQiLz4KICA8cGF0aCBkPSJNMTE4IDUyIDEyNiA3NCAxMDQgNzlaIiBmaWxsPSIjN0E1NDEwIiBvcGFjaXR5PSIwLjU1Ii8+CgogIDwhLS0g5bGCIDLvvJrkuK3mjpLkvr/nrb4gLS0+CiAgPHBhdGggZD0iTTQ2IDEwNiAxMTIgOTIgMTM4IDEyMiA3MiAxMzZaIiBmaWxsPSIjRkZGRkZGIiBzdHJva2U9IiMxOTJDM0IiIHN0cm9rZS13aWR0aD0iNCIvPgogIDxwYXRoIGQ9Ik0xMzAgMTAwIDEzOCAxMjIgMTE2IDEyN1oiIGZpbGw9IiNFNkRFRDAiLz4KCiAgPCEtLSDlsYIgM++8muWJjeaOkuS+v+etviAtLT4KICA8cGF0aCBkPSJNMjAgMTUyIDg2IDEzOCAxMTIgMTY4IDQ2IDE4MloiIGZpbGw9IiNBMkM4QzIiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPHBhdGggZD0iTTEwNCAxNDYgMTEyIDE2OCA5MCAxNzNaIiBmaWxsPSIjNUU5OTkzIi8+CgogIDwhLS0g5L6/562+5LiK55qE5omL5YaZ57q/IC0tPgogIDxwYXRoIGQ9Ik01OCA2OCAxMTAgNThNNjYgNzggMTE4IDY4IiBmaWxsPSJub25lIiBzdHJva2U9IiM1RjZFNzgiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTTY4IDExMiAxMjAgMTAyTTc2IDEyMiAxMjggMTEyIiBmaWxsPSJub25lIiBzdHJva2U9IiM1RjZFNzgiIHN0cm9rZS13aWR0aD0iMyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIi8+CiAgPHBhdGggZD0iTTQyIDE1OCA5NCAxNDhNNTAgMTY4IDEwMiAxNTgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzE5MkMzQiIgc3Ryb2tlLXdpZHRoPSIzIgogICAgICAgIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgb3BhY2l0eT0iMC41Ii8+CgogIDwhLS0g5Lid572R6aKX57KS77ya5Y+q6JC95Zyo6IOM5pmv6Imy5Z2X5YaF6YOo77yM5Y+z5L6nIDI0ZHAg6Z2Z5Yy65L+d5oyB5bmz5pW0IC0tPgogIDxnIGlkPSJncmFpbiIgZmlsbD0iIzdGOEE5MiIgb3BhY2l0eT0iMC4zNSI+CiAgICA8Y2lyY2xlIGN4PSIyNCIgY3k9IjUyIiByPSIxLjYiLz48Y2lyY2xlIGN4PSIxNiIgY3k9IjExMiIgcj0iMS42Ii8+PGNpcmNsZSBjeD0iMzAiIGN5PSIyMDAiIHI9IjEuNiIvPgogICAgPGNpcmNsZSBjeD0iMTIiIGN5PSIxOTIiIHI9IjEuNiIvPjxjaXJjbGUgY3g9IjEyMCIgY3k9IjE2IiByPSIxLjYiLz48Y2lyY2xlIGN4PSIxOCIgY3k9IjMwIiByPSIxLjYiLz4KICAgIDxjaXJjbGUgY3g9IjkwIiBjeT0iMjAwIiByPSIxLjYiLz48Y2lyY2xlIGN4PSIxMjgiIGN5PSIxNzYiIHI9IjEuNiIvPgogIDwvZz4KPC9zdmc+Cg==",
+};
+
+/* ============================================================
+   A. 控制台：主题 / 字号 / 减少动画 / 素材状态
+   ============================================================ */
+const body = document.body;
+const html = document.documentElement;
+
+document.querySelectorAll("[data-theme-btn]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    const t = b.getAttribute("data-theme-btn");
+    html.setAttribute("data-theme", t);
+    document.querySelectorAll("[data-theme-btn]").forEach(function (x) {
+      x.setAttribute("aria-pressed", String(x === b));
+    });
+    // 主题切换会改变 heat 系列取值，重绘热力图
+    renderHeatmap();
+  });
+});
+
+const fsInput = document.getElementById("fs");
+const fsVal = document.getElementById("fs-val");
+/* 字号档位：驱动封面收窄/让位与大标题降档。
+   1: <1.3  2: 1.3–1.59  3: 1.6–1.99（封面 96px）  4: >=2.0（封面整块让位）
+   实测依据：2.0 时保留封面会让首屏可见任务卡降到 0 张，违反「装饰不遮蔽任务」。 */
+function fsBand(v) { return v >= 2.0 ? "4" : (v >= 1.6 ? "3" : (v >= 1.3 ? "2" : "1")); }
+function applyFontScale(v) {
+  fsVal.textContent = v.toFixed(2);
+  const band = fsBand(v);
+  document.querySelectorAll(".phone").forEach(function (p) {
+    p.style.setProperty("--fs", String(v));
+    p.setAttribute("data-fs-band", band);
+  });
+  applyTimerLadder(v);
+}
+fsInput.addEventListener("input", function () {
+  applyFontScale(parseFloat(fsInput.value));
+});
+
+const rmOff = document.getElementById("rm-off");
+const rmOn = document.getElementById("rm-on");
+function setReduced(on) {
+  body.classList.toggle("reduced", on);
+  rmOn.setAttribute("aria-pressed", String(on));
+  rmOff.setAttribute("aria-pressed", String(!on));
+  // 减少动画等价反馈：热力格不放大，改用更粗描边（由 CSS 类的 2px outline 承担）
+  document.querySelectorAll(".hm-cell").forEach(function (c) {
+    c.classList.toggle("rm", on);
+  });
+}
+rmOn.addEventListener("click", function () { setReduced(true); });
+rmOff.addEventListener("click", function () { setReduced(false); });
+
+function artKeyFor(el) {
+  var img = el.querySelector("img");
+  if (!img) return null;
+  var real = img.getAttribute("data-real-src") || "";
+  var m = real.match(/assets\/art\/([A-Za-z0-9_]+)\.svg/);
+  return m ? m[1] : null;
+}
+
+/* 素材展示方式（两个模式都给**真实交付素材**，区别只在能否加载）：
+   - 已交付素材：把相对路径换成 INLINE_ART[key]（assets/art/*.svg 的 base64 逐字节副本）。
+     这是唯一能在 file:// 下显示素材的方式（Chromium 禁止 file:// 加载 file:// 子资源）。
+   - 不可加载（退化视觉）：保留相对路径 src，加载必然失败 → 走真实的退化路径。
+   两个模式都不使用自绘占位图形冒充素材。 */
+function setAssetMode(mode) {
+  document.querySelectorAll(".cover, .thumb").forEach(function (el) {
+    var img = el.querySelector("img");
+    if (!img) return;
+    var key = artKeyFor(el);
+    if (mode === "inline") {
+      if (key && INLINE_ART[key]) {
+        img.onerror = null;                      // 内联副本不会再失败
+        img.setAttribute("src", INLINE_ART[key]);
+        el.classList.remove("missing");
+      }
+    } else {
+      // 恢复相对路径并重新接上 onerror：加载失败会真实地把容器标成 .missing
+      img.onerror = function () { el.classList.add("missing"); };
+      el.classList.remove("missing");
+      img.setAttribute("src", img.getAttribute("data-real-src"));
+    }
+  });
+  bindAltPills();
+  syncExtraArt(mode);
+}
+
+/* 在退化容器上标注「这张图本该用哪个素材」，让「不可加载」模式可审阅 */
+function bindAltPills() {
+  document.querySelectorAll(".cover, .thumb").forEach(function (el) {
+    var key = artKeyFor(el);
+    if (!key) return;
+    var pill = el.querySelector(".miss-note");
+    if (!pill) {
+      pill = document.createElement("div");
+      pill.className = "miss-note";
+      el.appendChild(pill);
+    }
+    pill.textContent = "插图暂不可用 · 应为 " + key + ".svg";
+  });
+}
+
+document.querySelectorAll("[data-asset-btn]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    document.querySelectorAll("[data-asset-btn]").forEach(function (x) {
+      x.setAttribute("aria-pressed", String(x === b));
+    });
+    setAssetMode(b.getAttribute("data-asset-btn"));
+  });
+});
+/* 记住原始素材路径，供「不可加载」模式回填 */
+document.querySelectorAll(".cover img, .thumb img").forEach(function (img) {
+  img.setAttribute("data-real-src", img.getAttribute("src"));
+});
+
+/* ============================================================
+   B. 今天页状态切换
+   ============================================================ */
+const TODAY = {
+  normal:    { normal: true },
+  focusing:  { normal: true, only: ["focusing"] },
+  crowded:   { normal: true, crowd: true },
+  longtitle: { normal: true, longtitle: true },
+  largefont: { normal: true, largefont: true },
+  empty:     { empty: true },
+  error:     { error: true },
+  recovery:  { recovery: true }
+};
+
+function applyToday(state) {
+  const cfg = TODAY[state] || TODAY.normal;
+  const root = document.querySelector("[data-today='normal']");
+  root.style.display = cfg.normal ? "" : "none";
+  document.querySelectorAll("[data-today='empty'],[data-today='error'],[data-today='recovery']")
+    .forEach(function (el) {
+      const key = el.getAttribute("data-today");
+      el.style.display = cfg[key] ? "" : "none";
+    });
+
+  // 默认隐藏只在特定状态出现的内容，再按状态打开
+  document.querySelectorAll("[data-only]").forEach(function (el) { el.style.display = "none"; });
+  if (cfg.only) {
+    cfg.only.forEach(function (k) {
+      const el = document.querySelector("[data-only='" + k + "']");
+      if (el) el.style.display = "";
+    });
+  }
+  if (cfg.largefont) {
+    const e = document.querySelector("[data-only='largefont']");
+    if (e) e.style.display = "";
+    fsInput.value = "2";
+    applyFontScale(2);
+  } else if (parseFloat(fsInput.value) === 2) {
+    // 离开「大字体」演示时把滑块复位，避免下一个状态也被放大
+    fsInput.value = "1";
+    applyFontScale(1);
+  }
+  if (cfg.longtitle) {
+    const e = document.querySelector("[data-only='longtitle']");
+    if (e) e.style.display = "";
+  }
+
+  // 折叠区：常规 3 项版 ↔ 37 项版 互斥，切换时都置为收起态
+  const foldA = document.querySelector("[data-fold='a']");
+  const foldABody = document.querySelector("[data-fold-body='a']");
+  const crowd = document.querySelector("[data-only='crowded']");
+  const foldB = document.querySelector("[data-fold='b']");
+  const foldBBody = document.querySelector("[data-fold-body='b']");
+  if (crowd) crowd.style.display = cfg.crowd ? "" : "none";
+  if (foldA) { foldA.style.display = cfg.crowd ? "none" : ""; foldA.setAttribute("aria-expanded", "false"); }
+  if (foldABody) { foldABody.style.display = cfg.crowd ? "none" : ""; foldABody.classList.remove("open"); }
+      if (foldB) foldB.setAttribute("aria-expanded", "false");
+  if (foldBBody) foldBBody.classList.remove("open");
+
+  // 「折叠区数十项」状态：自动展开 37 项折叠区，否则这一演示在首屏完全看不到
+  // （实测：展开前它的截图与「满态」在可视区里没有区别 = 等于没演示）。
+  if (cfg.crowd) {
+    if (foldB) foldB.setAttribute("aria-expanded", "true");
+    if (foldBBody) foldBBody.classList.add("open");
+    if (foldB) {
+      const t = foldB.querySelector(".t-headS");
+      if (t) t.textContent = "收起已完成 37 项";
+    }
+  }
+
+  // FAB 在「数十项」状态隐藏
+  document.querySelectorAll("[data-hide-on='crowded']").forEach(function (el) {
+    el.style.display = cfg.crowd ? "none" : "";
+  });
+
+  // 计时中：状态卡出现
+  const rb = document.querySelector(".runbar");
+  if (rb) rb.style.display = cfg.only ? "" : "none";
+
+  // 长标题：与日常态形成可辨差异（正常态只有短名「整理考研数学错题本」）
+  const longEl = document.querySelector("[data-long='long']");
+  if (longEl) {
+    longEl.textContent = cfg.longtitle
+      ? "整理考研数学错题本（第 3 章 中值定理与导数应用）并把订正过程誊到活页本上，同时把每道题的错因单独记在一页"
+      : "整理考研数学错题本";
+  }
+
+  // 卡片标题在 1 行 / 2 行之间变化，示范卡高由内容撑开（不压字号）
+  const cardEl = longEl ? longEl.closest(".tcard") : null;
+  if (cardEl) cardEl.classList.toggle("one-line", !cfg.longtitle);
+}
+
+document.querySelectorAll("[data-today-state]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    const s = b.getAttribute("data-today-state");
+    document.querySelectorAll("[data-today-state]").forEach(function (x) {
+      x.setAttribute("aria-pressed", String(x === b));
+    });
+    applyToday(s);
+    const sc = document.getElementById("today-scroll");
+    sc.scrollTop = 0;
+    // 「数十项」与「长标题」的演示内容都在首屏之下：滚动到该处，
+    // 否则截出来的画面与「满态」没有区别（这是实测到的、会误导审阅的问题）。
+    if (s === "crowded" || s === "longtitle") {
+      requestAnimationFrame(function () {
+        if (s === "crowded") {
+          const f = document.querySelector("#phone-today [data-fold='b']");
+          if (f) sc.scrollTop = f.offsetTop - 8;
+        } else {
+          const el = document.querySelector("[data-long='long']");
+          if (el) sc.scrollTop = Math.max(0, el.closest(".tcard").offsetTop - 150);
+        }
+      });
+    }
+  });
+});
+
+/* 折叠区展开/收起 */
+document.querySelectorAll("[data-fold]").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    const key = btn.getAttribute("data-fold");
+    const bodyEl = document.querySelector("[data-fold-body='" + key + "']");
+    const open = btn.getAttribute("aria-expanded") === "true";
+    btn.setAttribute("aria-expanded", String(!open));
+    if (bodyEl) bodyEl.classList.toggle("open", !open);
+    const big = btn.querySelector(".t-headS");
+    if (big) {
+      const n = (big.textContent.match(/\d+/) || ["0"])[0];
+      big.textContent = (open ? "已完成 " : "收起已完成 ") + n + " 项";
+    }
+  });
+});
+
+/* ============================================================
+   C. 洞察页状态切换
+   ============================================================ */
+document.querySelectorAll("[data-ins-state]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    const s = b.getAttribute("data-ins-state");
+    document.querySelectorAll("[data-ins-state]").forEach(function (x) {
+      x.setAttribute("aria-pressed", String(x === b));
+    });
+    document.querySelector("[data-ins='normal']").style.display = (s === "normal" || s === "largefont" || s === "longtitle") ? "" : "none";
+    ["empty", "error", "warn"].forEach(function (k) {
+      document.querySelector("[data-ins='" + k + "']").style.display = (s === k) ? "" : "none";
+    });
+    const ph = document.getElementById("phone-insights");
+    if (s === "largefont") { fsInput.value = "2"; applyFontScale(2); }
+    else if (parseFloat(fsInput.value) === 2) { fsInput.value = "1"; applyFontScale(1); }
+
+    // 长标题：图例第一条换成超长名（2 行省略），并显示说明条；表格明细仍给全名
+    const rows = document.querySelectorAll(".legend-list .ll-row .nm");
+    const longName = "微信读书 30 分钟（每天固定读一章并做笔记，读完写三行摘要）";
+    if (rows[0]) {
+      rows[0].textContent = (s === "longtitle") ? longName : "微信读书 30 分钟";
+      rows[0].classList.toggle("clamp2", s === "longtitle");
+    }
+    const tblFirst = document.querySelector(".tbl tbody tr td");
+    if (tblFirst) {
+      tblFirst.textContent = (s === "longtitle") ? longName : "微信读书 30 分钟";
+    }
+    const insNote = document.querySelector("[data-only='ins-longtitle']");
+    if (insNote) insNote.style.display = (s === "longtitle") ? "" : "none";
+    const insc = document.getElementById("ins-scroll");
+    insc.scrollTop = 0;
+    /* 长标题的差异点在底部图例；不滚动过去，这一状态在可视区里与「满态」逐像素相同。 */
+    if (s === "longtitle") {
+      requestAnimationFrame(function () {
+        const lg = document.querySelector(".legend-list");
+        if (lg) insc.scrollTop = Math.max(0, lg.offsetTop - 60);
+      });
+    }
+  });
+});
+
+/* ============================================================
+   D. 热力图：确定性伪随机，保证每次打开完全一致（截图回归可比）
+   ============================================================ */
+function mulberry32(seed) {
+  let a = seed;
+  return function () {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const HEAT_LABELS = [
+  { cls: "empty", text: "无记录" },
+  { cls: "l0", text: "0 分钟" },
+  { cls: "l1", text: "1 至 29 分钟" },
+  { cls: "l2", text: "30 至 59 分钟" },
+  { cls: "l3", text: "1 至 2 小时" },
+  { cls: "l4", text: "2 小时以上" }
+];
+
+function renderHeatmap() {
+  const grid = document.getElementById("hm-grid");
+  const months = document.getElementById("hm-months");
+  if (!grid) return;
+  grid.innerHTML = "";
+  const rnd = mulberry32(20261005);   // 固定种子
+
+  // 2026-01-01 为周四；从 2025-12-29（周一）起画满 53 周
+  const start = new Date(2026, 0, 1);
+  const startDow = (start.getDay() + 6) % 7;      // 周一 = 0
+  const firstMonday = new Date(2026, 0, 1 - startDow);
+
+  let selected = null;
+  for (let w = 0; w < 53; w++) {
+    const col = document.createElement("div");
+    col.className = "hm-col";
+    for (let d = 0; d < 7; d++) {
+      const date = new Date(firstMonday.getFullYear(), firstMonday.getMonth(), firstMonday.getDate() + w * 7 + d);
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "hm-cell";
+
+      const inYear = date.getFullYear() === 2026;
+      const isFuture = date > new Date(2026, 9, 5);
+      let idx;
+      if (!inYear) { idx = -1; }
+      else if (isFuture) { idx = -1; }
+      else {
+        const r = rnd();
+        if (r < 0.16) idx = 0;            // 无记录（虚线）
+        else if (r < 0.30) idx = 1;       // 零值
+        else if (r < 0.58) idx = 2;
+        else if (r < 0.78) idx = 3;
+        else if (r < 0.93) idx = 4;
+        else idx = 5;
+      }
+
+      if (idx === -1) {
+        cell.style.visibility = "hidden";
+        cell.tabIndex = -1;
+        cell.setAttribute("aria-hidden", "true");
+      } else {
+        const lab = HEAT_LABELS[idx];
+        if (lab.cls === "empty") cell.classList.add("empty");
+        else cell.classList.add(lab.cls);
+        const iso = date.toISOString().slice(0, 10);
+        cell.setAttribute("role", "gridcell");
+        cell.setAttribute("aria-label",
+          iso + "，" + (lab.cls === "empty" ? "无记录" : "投入约 " + lab.text));
+        cell.title = iso + " · " + lab.text;
+        cell.dataset.date = iso;
+        cell.dataset.min = lab.text;
+        const mins = [null, 0, 12, 45, 92, 186][idx];
+        cell.dataset.mins = String(mins);
+        if (iso === "2026-03-04") {
+          selected = cell;
+          cell.classList.add("sel");
+        }
+        cell.addEventListener("click", function () {
+          document.querySelectorAll(".hm-cell.sel").forEach(function (c) { c.classList.remove("sel"); });
+          cell.classList.add("sel");
+          updateSelected(cell);
+        });
+      }
+      col.appendChild(cell);
+    }
+    grid.appendChild(col);
+  }
+
+  // 月份刻度：按第一列所在月份变化打点
+  const widths = [];
+  let lastMonth = -1, count = 0;
+  for (let w = 0; w < 53; w++) {
+    const date = new Date(firstMonday.getFullYear(), firstMonday.getMonth(), firstMonday.getDate() + w * 7);
+    const m = date.getMonth();
+    if (lastMonth === -1) { lastMonth = m; count = 1; }
+    else if (m === lastMonth) { count++; }
+    else {
+      widths.push({ label: (lastMonth + 1) + "月", w: count });
+      lastMonth = m; count = 1;
+    }
+  }
+  widths.push({ label: (lastMonth + 1) + "月", w: count });
+  months.innerHTML = "";
+  widths.forEach(function (x) {
+    const s = document.createElement("span");
+    // 每列 6.5px + 2px gap
+    s.style.width = (x.w * 8.5) + "px";
+    s.textContent = x.w >= 2 ? x.label : "";
+    months.appendChild(s);
+  });
+
+  if (selected) updateSelected(selected);
+}
+
+function updateSelected(cell) {
+  const d = new Date(cell.dataset.date + "T00:00:00");
+  const wk = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][d.getDay()];
+  document.getElementById("sel-date").textContent =
+    d.getFullYear() + " 年 " + (d.getMonth() + 1) + " 月 " + d.getDate() + " 日 " + wk;
+  if (cell.classList.contains("empty")) {
+    document.getElementById("sel-val").textContent = "无记录";
+    document.getElementById("sel-sub").textContent = "这天没有生成任何待做记录，不算漏做。";
+  } else if (cell.classList.contains("l0")) {
+    document.getElementById("sel-val").textContent = "0:00:00";
+    document.getElementById("sel-sub").textContent = "这天有记录，但有效投入为 0。";
+  } else {
+    const mins = parseInt(cell.dataset.mins, 10);
+    const h = Math.floor(mins / 60), m = mins % 60;
+    document.getElementById("sel-val").textContent = h + ":" + String(m).padStart(2, "0") + ":36";
+    document.getElementById("sel-sub").textContent =
+      "投入 " + mins + " 分钟 · 3 个任务 · 有 1 项日常完成";
+  }
+}
+
+/* ============================================================
+   计时数字自适应阶梯（复刻设计系统 §3.5 的离散档位表）
+   规则：档位 52 → 44 → 40 → 36 → 32；按当前 fontScale 放大后，取仍能放进
+   可用宽（360dp 手机 − 16dp×2 = 328dp）的最大档。可用宽不够时才降档。
+   字宽模型与门禁脚本 verify_design_tokens.py 一致：
+     数字 0.5615 em、冒号 0.280 em ⇒ "01:24:36" = 6×0.5615 + 2×0.280 = 3.929 em
+   早期 .focus-big 写死 52px，本规则在原型里从未生效；现由本函数显式落地并标注档位。
+   ============================================================ */
+var TIMER_LADDER = [52, 44, 40, 36, 32];
+var TIMER_EM = 6 * 0.5615 + 2 * 0.280;     // "01:24:36"
+var TIMER_AVAIL = 328;                      // dp
+
+function pickTimerRung(fontScale) {
+  for (var i = 0; i < TIMER_LADDER.length; i++) {
+    if (TIMER_LADDER[i] * TIMER_EM * fontScale <= TIMER_AVAIL) return TIMER_LADDER[i];
+  }
+  return TIMER_LADDER[TIMER_LADDER.length - 1];
+}
+
+function applyTimerLadder(fontScale) {
+  var rung = pickTimerRung(fontScale);
+  var px = Math.round(rung * fontScale);    // 原型里 sp 按 px 处理
+  var text = "01:24:36";
+  var need = Math.round(TIMER_EM * rung * fontScale);
+  document.querySelectorAll("#phone-focus .focus-big").forEach(function (e) {
+    e.style.fontSize = px + "px";
+  });
+  document.querySelectorAll("#phone-focus .ladder-badge").forEach(function (b) {
+    b.textContent = "计时数字档位：" + rung + "sp × " + fontScale.toFixed(2) +
+      " = " + px + "px（占用 " + need + "dp / 可用 " + TIMER_AVAIL + "dp）";
+  });
+}
+
+/* ============================================================
+   F. 专注 / 记录 / 设置的通用状态切换
+   ============================================================ */
+/* 专注页：select / running / paused / done / midnight / switch */
+(function () {
+  var PANES = ["running", "paused", "done", "midnight", "switch"];
+  document.querySelectorAll("[data-focus-state]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var s = b.getAttribute("data-focus-state");
+      document.querySelectorAll("[data-focus-state]").forEach(function (x) {
+        x.setAttribute("aria-pressed", String(x === b));
+      });
+      var sel = document.querySelector("[data-focus='select']");
+      var large = (s === "largefont" || s === "running-large");
+      /* 「运行中 + 大字体」用来演示计时数字的降档：它是唯一能证明
+         「大字体下计时数字不溢出」的组合，早期 7 个状态里没有任何一个覆盖它。 */
+      var showRunning = (s === "running" || s === "running-large");
+      if (sel) sel.style.display = (s === "select" || s === "largefont") ? "" : "none";
+      PANES.forEach(function (k) {
+        var el = document.querySelector("[data-focus='" + k + "']");
+        if (!el) return;
+        el.style.display = (k === "running" ? showRunning : (s === k)) ? "" : "none";
+      });
+      /* 操作条只在模式选择时出现：到点结果页已经有「休息/继续专注」，
+         再显示「开始」会给出两个互相矛盾的主操作。 */
+      var bar = document.getElementById("focus-action-bar");
+      if (bar) bar.style.display = (s === "select" || s === "largefont") ? "" : "none";
+      if (large) { fsInput.value = "2"; applyFontScale(2); }
+      else if (parseFloat(fsInput.value) === 2) { fsInput.value = "1"; applyFontScale(1); }
+      document.getElementById("focus-scroll").scrollTop = 0;
+    });
+  });
+  /* 分钟步进 + 快捷档 */
+  var mm = 25;
+  function renderMM() {
+    var v = document.getElementById("mm-val");
+    if (v) v.textContent = String(mm);
+    document.querySelectorAll(".mm-quick button").forEach(function (q) {
+      q.setAttribute("aria-pressed", String(parseInt(q.textContent, 10) === mm));
+    });
+  }
+  document.querySelectorAll("#phone-focus [data-step]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      mm = Math.min(1440, Math.max(1, mm + parseInt(b.getAttribute("data-step"), 10)));
+      renderMM();
+    });
+  });
+  document.querySelectorAll(".mm-quick button").forEach(function (q) {
+    q.addEventListener("click", function () {
+      mm = parseInt(q.textContent, 10);
+      renderMM();
+    });
+  });
+  renderMM();
+  function syncStartHint() {
+    var hint = document.getElementById("start-hint");
+    if (!hint) return;
+    var cd = document.querySelector('[data-mode="countdown"]');
+    var isCd = cd && cd.getAttribute("aria-checked") === "true";
+    hint.textContent = isCd
+      ? "倒计时 · " + mm + " 分钟 · 点「开始」后才会建立计时"
+      : "正向计时 · 点「开始」后才会建立计时；不设终点";
+  }
+  var _renderMM = renderMM;
+  renderMM = function () { _renderMM(); syncStartHint(); };
+  syncStartHint();
+  /* 模式卡单选 */
+  document.querySelectorAll("[data-mode]").forEach(function (c) {
+    function pick() {
+      document.querySelectorAll("[data-mode]").forEach(function (x) {
+        x.setAttribute("aria-checked", String(x === c));
+      });
+    }
+    c.addEventListener("click", function () { pick(); syncStartHint(); });
+    c.addEventListener("keydown", function (e) {
+      if (e.key === " " || e.key === "Enter") { e.preventDefault(); pick(); syncStartHint(); }
+    });
+  });
+})();
+
+/* 记录页：日历渲染（确定性伪随机，保证每次打开一致，可做截图回归） */
+function renderCalendar(gridId, opts) {
+  var grid = document.getElementById(gridId);
+  if (!grid) return;
+  opts = opts || {};
+  grid.innerHTML = "";
+  ["一", "二", "三", "四", "五", "六", "日"].forEach(function (d) {
+    var h = document.createElement("div");
+    h.className = "dow";
+    h.textContent = d;
+    grid.appendChild(h);
+  });
+  var year = 2026, month = 9;            // 9 = 十月（0-based）
+  var first = new Date(year, month, 1);
+  var lead = (first.getDay() + 6) % 7;   // 周一 = 0
+  var days = new Date(year, month + 1, 0).getDate();
+  var rnd = mulberry32(20261005);
+  var today = 5;
+
+  for (var i = 0; i < lead; i++) {
+    var pad = document.createElement("div");
+    pad.className = "cell future";
+    pad.innerHTML = "<span class='dn'></span><span class='csw'></span>";
+    grid.appendChild(pad);
+  }
+  for (var d = 1; d <= days; d++) {
+    var cell = document.createElement("button");
+    cell.type = "button";
+    cell.className = "cell";
+    cell.setAttribute("role", "gridcell");
+
+    var isFuture = d > today;
+    var isToday = (d === today);
+    var state, mins = 0;
+    /* 前 5 天用固定表，让「无记录 / 修正为零 / 有投入」三类在首屏都可见、
+       否则随机种子可能一整天都抽不到「无记录」，那种状态就等于没演示。
+       其余日期用确定性伪随机（固定种子，截图可回归）。 */
+    var PINNED = { 1: "l1", 2: "none", 3: "zero", 4: "l4", 5: "l3" };
+    if (isFuture) {
+      state = "future";
+    } else if (opts.allEmpty) {
+      state = "none";
+    } else if (PINNED[d]) {
+      state = PINNED[d];
+      mins = { l1: 18, l2: 45, l3: 92, l4: 186 }[state] || 0;
+    } else {
+      var r = rnd();
+      if (r < 0.12) { state = "none"; }
+      else if (r < 0.22) { state = "zero"; }
+      else if (r < 0.55) { state = "l1"; mins = 18; }
+      else if (r < 0.78) { state = "l2"; mins = 45; }
+      else if (r < 0.93) { state = "l3"; mins = 92; }
+      else { state = "l4"; mins = 186; }
+    }
+    if (isToday && !isFuture) state = opts.allEmpty ? "none" : "l3";
+    if (opts.dayEmpty) { state = (d === 4) ? "none" : "none"; }
+    if (isToday) cell.classList.add("today");
+    if (state === "future") cell.classList.add("future");
+    if (state === "none") cell.classList.add("none");
+    if (state === "zero") cell.classList.add("zero");
+    if (state === "l1" || state === "l2" || state === "l3" || state === "l4") cell.classList.add(state);
+    if (!isFuture && !opts.allEmpty && d % 3 === 0) cell.classList.add("done");
+    if (isToday && !opts.allEmpty) cell.setAttribute("aria-pressed", "true");
+
+    var label = year + " 年 " + (month + 1) + " 月 " + d + " 日，";
+    label += isFuture ? "未来日期，不可用"
+      : (state === "none" ? "无记录"
+        : (state === "zero" ? "投入 0 分钟，含 1 条修正"
+          : "投入 " + mins + " 分钟"));
+    cell.setAttribute("aria-label", label);
+    cell.innerHTML = "<span class='dn'>" + d + "</span><span class='csw'></span>";
+    if (!opts.dayEmpty) {
+      cell.addEventListener("click", function (ev) {
+        var g = ev.currentTarget.parentNode;
+        g.querySelectorAll(".cell[aria-pressed='true']").forEach(function (c) {
+          c.removeAttribute("aria-pressed");
+        });
+        if (!ev.currentTarget.classList.contains("future")) {
+          ev.currentTarget.setAttribute("aria-pressed", "true");
+        }
+      });
+    } else {
+      cell.addEventListener("click", function () {});
+    }
+    grid.appendChild(cell);
+  }
+}
+
+/* ============================================================
+   共享图例构建器
+   记录页与洞察页必须用**同一套**色阶定义，否则同一语义会出现两套图例
+   （评审实测：记录页图例缺 30–59 与 ≥120 两档，页面上却真的存在 l4 深色格，
+   用户会看到一块找不到对应图例的颜色）。
+   六档色阶的阈值由 HEAT_STEPS 单点定义；两页各自只决定是否追加「有完成/今天」。
+   ============================================================ */
+var HEAT_STEPS = [
+  { cls: "empty", css: "",                   label: "无记录",   note: "虚线轮廓" },
+  { cls: "",      css: "var(--heat0)",       label: "0 分钟" },
+  { cls: "",      css: "var(--heat1)",       label: "1–29 分" },
+  { cls: "",      css: "var(--heat2)",       label: "30–59 分" },
+  { cls: "",      css: "var(--heat3)",       label: "1–2 小时" },
+  { cls: "",      css: "var(--heat4)",       label: "≥2 小时" }
+];
+
+function buildLegend(el, opts) {
+  if (!el) return;
+  opts = opts || {};
+  var frag = document.createDocumentFragment();
+  HEAT_STEPS.forEach(function (st) {
+    var g = document.createElement("span");
+    g.className = "grp";
+    var sw = document.createElement("span");
+    sw.className = "sw2" + (st.cls ? " " + st.cls : "");
+    if (st.cls === "empty") sw.style.background = "transparent";
+    else sw.style.background = st.css;
+    g.appendChild(sw);
+    g.appendChild(document.createTextNode(st.label));
+    frag.appendChild(g);
+  });
+  if (opts.records) {
+    [["有完成", "var(--done-ink)", ""],
+     ["今天", "transparent", "box-shadow:inset 0 0 0 2px var(--accent)"]].forEach(function (x) {
+      var g = document.createElement("span");
+      g.className = "grp";
+      var sw = document.createElement("span");
+      sw.className = "sw2";
+      sw.style.background = x[1];
+      if (x[2]) sw.style.cssText += ";" + x[2];
+      g.appendChild(sw);
+      g.appendChild(document.createTextNode(x[0]));
+      frag.appendChild(g);
+    });
+  }
+  el.innerHTML = "";
+  el.appendChild(frag);
+}
+
+/* 记录页状态切换 */
+(function () {
+  var PANES = ["empty", "dayempty", "sheet", "del", "warn", "error"];
+  document.querySelectorAll("[data-rec-state]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var s = b.getAttribute("data-rec-state");
+      document.querySelectorAll("[data-rec-state]").forEach(function (x) {
+        x.setAttribute("aria-pressed", String(x === b));
+      });
+      var normal = document.querySelector("[data-rec='normal']");
+      var large = (s === "largefont");
+      if (normal) normal.style.display = (s === "normal" || large) ? "" : "none";
+      PANES.forEach(function (k) {
+        var el = document.querySelector("[data-rec='" + k + "']");
+        if (el) el.style.display = (s === k) ? "" : "none";
+      });
+      if (large) { fsInput.value = "2"; applyFontScale(2); }
+      else if (parseFloat(fsInput.value) === 2) { fsInput.value = "1"; applyFontScale(1); }
+      var sc = document.getElementById("records-scroll");
+      sc.scrollTop = 0;
+      /* 空态：月历 + 面板 + CTA 合计高于一屏，面板不滚动过去就只露一半。
+         滚动到面板 = 用户实际看到的位置，也让 CTA 进入可视区供审阅。 */
+      if (s === "empty") {
+        requestAnimationFrame(function () {
+          var pn = document.querySelector("[data-rec='empty'] .panel-in");
+          if (pn) sc.scrollTop = Math.max(0, pn.offsetTop - 8);
+        });
+      }
+    });
+  });
+})();
+
+/* 设置页状态切换 */
+(function () {
+  var PANES = ["zone", "restore", "badpw", "nospace", "restorefail"];
+  document.querySelectorAll("[data-set-state]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      var s = b.getAttribute("data-set-state");
+      document.querySelectorAll("[data-set-state]").forEach(function (x) {
+        x.setAttribute("aria-pressed", String(x === b));
+      });
+      var normal = document.querySelector("[data-set='normal']");
+      var large = (s === "largefont");
+      if (normal) normal.style.display = (s === "normal" || large) ? "" : "none";
+      PANES.forEach(function (k) {
+        var el = document.querySelector("[data-set='" + k + "']");
+        if (el) el.style.display = (s === k) ? "" : "none";
+      });
+      if (large) { fsInput.value = "2"; applyFontScale(2); }
+      else if (parseFloat(fsInput.value) === 2) { fsInput.value = "1"; applyFontScale(1); }
+      document.getElementById("settings-scroll").scrollTop = 0;
+    });
+  });
+})();
+
+/* 设置页开关可点（演示用） */
+document.querySelectorAll("#phone-settings .sw").forEach(function (sw) {
+  sw.addEventListener("click", function () {
+    sw.setAttribute("aria-checked", String(sw.getAttribute("aria-checked") !== "true"));
+  });
+});
+
+/* 记录页空态插画：也要跟随「素材展示方式」两个模式。
+   mode="inline" 用内联副本；否则恢复相对路径（file:// 下必然失败 → 真实退化路径）。 */
+function syncExtraArt(mode) {
+  [["#empty-rec-art", "empty_records"]].forEach(function (pair) {
+    var el = document.querySelector(pair[0]);
+    if (!el) return;
+    if (!el.getAttribute("data-real-src")) {
+      el.setAttribute("data-real-src", el.getAttribute("src"));
+    }
+    if (mode === "inline" && INLINE_ART[pair[1]]) {
+      el.onerror = null;
+      el.setAttribute("src", INLINE_ART[pair[1]]);
+    } else {
+      el.onerror = function () { el.style.opacity = "0"; };
+      el.style.opacity = "1";
+      el.setAttribute("src", el.getAttribute("data-real-src"));
+    }
+  });
+}
+
+/* ============================================================
+   E. 初始化
+   ============================================================ */
+html.setAttribute("data-theme", "day");
+renderHeatmap();
+applyFontScale(1);
+applyToday("normal");
+renderCalendar("cal-grid");
+renderCalendar("cal-grid-empty", { allEmpty: true });
+renderCalendar("cal-grid-dayempty", { dayEmpty: true });
+buildLegend(document.getElementById("legend-records"), { records: true });
+buildLegend(document.getElementById("legend-insights"), {});
+/* 默认显示已交付素材：file:// 下相对路径必然失败，内联副本是唯一能离线显示的方式 */
+setAssetMode("inline");
+
+/* 滚动时登记状态，供 FAB 描边使用 */
+document.querySelectorAll(".scroll").forEach(function (el) {
+  el.addEventListener("scroll", function () {
+    el.closest(".phone").setAttribute("data-scrolled", String(el.scrollTop > 8));
+  });
+});
+
+/* 尊重系统 prefers-reduced-motion 作为默认值 */
+if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  setReduced(true);
+}
+</script>
+</body>
+</html>
