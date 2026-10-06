@@ -70,7 +70,8 @@
 - **禁止的绕行（已全部排除并记录）**：① 生成缺 `.so` 的 APK；② `-x cargoNdkBuild` 跳过；③ 用 build-tools 的 `lld.exe`/`aarch64-linux-android-ld.exe` 硬凑——全机搜不到任何 Android 原生 sysroot（`find E:/Android/Sdk -name libc.so` 为空），缺 `libc/libm/libdl/liblog` 无法链接 Rust cdylib，且与契约 §4.3 规定的 NDK 工具链不符；④ 改 `app/build.gradle.kts:78-84` 的前置检查来让它变绿。
 - 交叉编译前的定位手段：`cargo check --target aarch64-linux-android`（只编译不链接）能独立证明 Rust 代码对 Android 目标可编译，与“缺链接器”区分开；`cargo build --target ...` 的报错是 `linker 'cc' not found`。
 - 阶段 C 交付口径（已裁定）：不存在可安装 APK，终态只能归为「实现受阻」或「代码完成、验收受阻」，**不得**写「首版验收完成」。`app-debug.apk` 未产出、`.so` 真实加载与装入均记为 **[未验证]**。
-- **APK 路径上除 `cargoNdkBuild` 外的任务已全部实测通过**（2026-10-05）：`gradlew processDebugResources processDebugManifest mergeDebugAssets mergeDebugJavaResource dexBuilderDebug` → `BUILD SUCCESSFUL`。故 NDK 是唯一剩余障碍，解除后即可出 APK。
+- **APK 路径上除 `cargoNdkBuild` 外的任务已全部实测通过**（2026-10-05）：`gradlew processDebugResources processDebugManifest mergeDebugAssets mergeDebugJavaResource dexBuilderDebug` → `BUILD SUCCESSFUL`。当时 NDK 是唯一剩余障碍。
+- **NDK 状态更新（2026-10-06）**：旧记录针对 2026-10-05 环境，现勿再据此说 NDK 未安装。实查 `E:\Android\Sdk\ndk\27.2.12479018` 存在 `source.properties` 与 Windows clang，`sdkmanager --list_installed` 识别该包已安装，SDK license 文件存在；`assembleDebug` 实测 BUILD SUCCESSFUL（38 tasks，30s），其中 `cargoNdkBuild` 为 UP-TO-DATE，故本次没有强制重跑 native 编译。APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。
 - **effect 列表是有序契约，FK 依赖顺序**（真实缺陷，已修 + 已加守护测试）：`active_session_slot.session_id` 是 → `focus_session` 的外键，因此 `OpenSession` 必须在 `SetActiveSession` **之前**。原实现顺序相反，导致每次 `StartSession` 在 Room 事务内报 `SQLITE_CONSTRAINT_FOREIGNKEY (code 787)`。Kotlin 按列表顺序应用 effects（`EffectsApplier`），所以 **Rust 侧 `state.rs` 的 `effects.push` 顺序即写入顺序**，新增任何带外键的 effect 都要检查生产者顺序。守护测试：`rust/tests/single_session.rs` 的 `opening_a_session_persists_the_session_before_the_active_slot`。
 - **本机 Room 外键是真正生效的**（`AppDatabase` 的 `onOpen` 执行 `PRAGMA foreign_keys = ON`），JVM/Robolectric 下同样生效——这正是上一条缺陷在 JVM 测试里就暴露出来的原因，不要以为“只有真机才会碰到”。
 - **新增 Rust 投影导出必须同步桥接**：契约 §3.2 要求统计投影是“查询”粒度、§9 要求返回类型统一 `DomainResult`，故所有「查询」类导出都要在接口 `DomainBridge` 与实现 `UniffiDomainBridge` 各加一条，否则页面会绕过唯一 seam 直接 `import app.arttodo.core.*` 调裸导出。守护测试：`app/src/test/java/app/arttodo/DomainBridgeProjectionTest.kt`（含 N10 的“日历/趋势/热力图/占比四处同值”断言）。
@@ -97,6 +98,8 @@
 - 写边界校验：`FieldLimits`（标题 120 / 备注 2000 / 分钟 1..1440，与 `rust/src/state.rs` 常量对齐）在 `EffectsApplier` 事务内抛 `DataViolationException` → 整表回滚 → `CommandExecutor` 转成 `DomainFailure.Validation`。备份结构校验在 `BackupStructure`（magic/版本带/必需字段/表数与行数上限）；JSON 整数类型由 `org.json` 按字面量大小决定（Integer/Long/BigInteger），判断整数要三型都接受，写死 Long 会误拒合法文件。
 
 ### Compose 页面与主题（2026-10-05 建立，已实跑）
+
+- **懒列表条目内的 `BoxWithConstraints.maxHeight` 可能是无限值**：2026-10-06 在小米 M2102K1AC 实机复现“展开已完成”闪退，异常为 `Vertically scrollable component was measured with an infinity maximum height constraints`；完成区内层 `LazyColumn` 位于外层 `LazyColumn` item，旧实现从条目内部取 `maxHeight` 再设 60% 上限，仍是 Infinity。限高必须取自 `TodayScreen` 的有界根视口并传入完成区。守护测试 `TodayCompletedBandTest.expanding_the_completed_band_displays_completed_tasks` 改前同异常失败、改后通过；修复版覆盖安装后实机反复展开/收起，崩溃缓冲区无新记录。
 
 - 记录页 `dayTotal` 必须从选中日期的账本行按 `task_id + app_date` 经 `DomainBridge.replayDailyTotal` 汇总；不要把某个任务的 `SetDailyTotalSeconds` 当作全日总量。补记预览同样必须分别显示所选任务前后量与全日投影值。
 - 洞察页全历史热力图不能复用「从年初截取」的账本子集；日历/趋势/占比/热力图应来源同一完整 ledger snapshot。Compose `horizontalScroll` 必须在有界 viewport（如 `Box(weight(1f))`）内，不能嵌在先无限测量其子项的 `Row.horizontalScroll()`；语义描述测试可直接断言合并节点树文本。

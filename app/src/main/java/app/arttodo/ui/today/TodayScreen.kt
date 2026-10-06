@@ -120,7 +120,8 @@ fun TodayScreen(
         state.tasks.filter { state.isCompleted(it) }
     }
 
-    Box(modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        val completedMaxHeight = maxHeight * 0.6f
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -271,6 +272,7 @@ fun TodayScreen(
                     CompletedBand(
                         tasks = completed,
                         state = state,
+                        maxHeight = completedMaxHeight,
                         snackbar = snackbar,
                         onEdit = { editing = it },
                     )
@@ -718,6 +720,7 @@ private fun SortStepButton(
 private fun CompletedBand(
     tasks: List<TaskRecord>,
     state: app.arttodo.ui.UiState,
+    maxHeight: androidx.compose.ui.unit.Dp,
     snackbar: androidx.compose.material3.SnackbarHostState,
     onEdit: (TaskRecord) -> Unit,
 ) {
@@ -761,66 +764,63 @@ private fun CompletedBand(
             )
         }
 
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val maxBand = maxHeight * 0.6f
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .animateContentSize(animationSpec = motion.tweenOf(motion.stateMediumMs))
-                    .heightIn(max = if (expanded) maxBand else 0.dp)
-                    .clip(RoundedCornerShape(bottomStart = Radius.md, bottomEnd = Radius.md)),
-            ) {
-                if (expanded) {
-                    if (tasks.size > 20) {
-                        Text(
-                            text = "共 ${tasks.size} 项，可向上滑动",
-                            style = Studio.text.labelM,
-                            color = Studio.colors.inkTertiary,
-                            modifier = Modifier.padding(vertical = Space.s),
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .animateContentSize(animationSpec = motion.tweenOf(motion.stateMediumMs))
+                .heightIn(max = if (expanded) maxHeight else 0.dp)
+                .clip(RoundedCornerShape(bottomStart = Radius.md, bottomEnd = Radius.md)),
+        ) {
+            if (expanded) {
+                if (tasks.size > 20) {
+                    Text(
+                        text = "共 ${tasks.size} 项，可向上滑动",
+                        style = Studio.text.labelM,
+                        color = Studio.colors.inkTertiary,
+                        modifier = Modifier.padding(vertical = Space.s),
+                    )
+                }
+                LazyColumn(
+                    Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(Space.s),
+                ) {
+                    items(tasks, key = { it.taskId }) { task ->
+                        StudioTaskCard(
+                            title = task.title,
+                            note = task.note,
+                            art = ArtAsset.forTask(task.kind == TaskKind.DAILY, true),
+                            completed = true,
+                            kindLabel = if (task.kind == TaskKind.DAILY) "日常任务" else "临时任务",
+                            onOpen = {
+                                if (task.kind == TaskKind.DAILY) {
+                                    viewModel.setDailyCompletion(task.taskId, state.today, false)
+                                } else {
+                                    viewModel.setTemporaryCompletion(task.taskId, false)
+                                }
+                            },
+                            onToggleComplete = {
+                                if (task.kind == TaskKind.DAILY) {
+                                    viewModel.setDailyCompletion(task.taskId, state.today, false)
+                                } else {
+                                    viewModel.setTemporaryCompletion(task.taskId, false)
+                                }
+                            },
+                            menuActions = listOf(
+                                "编辑标题与备注" to { onEdit(task) },
+                                "归档" to { viewModel.archiveTask(task.taskId) },
+                            ),
+                            accessibilityActions = listOf(
+                                CustomAccessibilityAction("撤销完成") {
+                                    if (task.kind == TaskKind.DAILY) {
+                                        viewModel.setDailyCompletion(task.taskId, state.today, false)
+                                    } else {
+                                        viewModel.setTemporaryCompletion(task.taskId, false)
+                                    }
+                                    true
+                                },
+                                CustomAccessibilityAction("归档") { viewModel.archiveTask(task.taskId); true },
+                            ),
                         )
-                    }
-                    LazyColumn(
-                        Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(Space.s),
-                    ) {
-                        items(tasks, key = { it.taskId }) { task ->
-                            StudioTaskCard(
-                                title = task.title,
-                                note = task.note,
-                                art = ArtAsset.forTask(task.kind == TaskKind.DAILY, true),
-                                completed = true,
-                                kindLabel = if (task.kind == TaskKind.DAILY) "日常任务" else "临时任务",
-                                onOpen = {
-                                    if (task.kind == TaskKind.DAILY) {
-                                        viewModel.setDailyCompletion(task.taskId, state.today, false)
-                                    } else {
-                                        viewModel.setTemporaryCompletion(task.taskId, false)
-                                    }
-                                },
-                                onToggleComplete = {
-                                    if (task.kind == TaskKind.DAILY) {
-                                        viewModel.setDailyCompletion(task.taskId, state.today, false)
-                                    } else {
-                                        viewModel.setTemporaryCompletion(task.taskId, false)
-                                    }
-                                },
-                                menuActions = listOf(
-                                    "编辑标题与备注" to { onEdit(task) },
-                                    "归档" to { viewModel.archiveTask(task.taskId) },
-                                ),
-                                accessibilityActions = listOf(
-                                    CustomAccessibilityAction("撤销完成") {
-                                        if (task.kind == TaskKind.DAILY) {
-                                            viewModel.setDailyCompletion(task.taskId, state.today, false)
-                                        } else {
-                                            viewModel.setTemporaryCompletion(task.taskId, false)
-                                        }
-                                        true
-                                    },
-                                    CustomAccessibilityAction("归档") { viewModel.archiveTask(task.taskId); true },
-                                ),
-                            )
-                        }
                     }
                 }
             }
