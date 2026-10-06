@@ -69,6 +69,67 @@ fn rows(state: &DomainState) -> Vec<LedgerRow> {
         .collect()
 }
 
+#[test]
+fn recovery_adjustment_tracks_its_source_across_a_later_set_total() {
+    let source = LedgerRow {
+        ledger_seq: 1,
+        kind: 0,
+        ref_id: Some("sess:x:1:1000:1".to_string()),
+        task_id: "task:t1".to_string(),
+        app_date: date(),
+        occurred_wall_ms: BASE + 1_000,
+        zone_epoch_seq: 1,
+        delta_seconds: Some(600),
+        set_total_seconds: None,
+        created_wall_ms: BASE + 600_000,
+        edited_at_ms: None,
+        is_deleted: false,
+        deleted_at_ms: None,
+    };
+    let correction = LedgerRow {
+        ledger_seq: 2,
+        kind: 3,
+        ref_id: Some(format!("recovery:{}", source.ref_id.as_deref().unwrap())),
+        task_id: source.task_id.clone(),
+        app_date: source.app_date.clone(),
+        occurred_wall_ms: BASE + 900_000,
+        zone_epoch_seq: 1,
+        delta_seconds: Some(-200),
+        set_total_seconds: None,
+        created_wall_ms: BASE + 900_000,
+        edited_at_ms: None,
+        is_deleted: false,
+        deleted_at_ms: None,
+    };
+    let later_set = LedgerRow {
+        ledger_seq: 3,
+        kind: 2,
+        ref_id: None,
+        task_id: source.task_id.clone(),
+        app_date: source.app_date.clone(),
+        occurred_wall_ms: BASE + 1_000_000,
+        zone_epoch_seq: 1,
+        delta_seconds: None,
+        set_total_seconds: Some(500),
+        created_wall_ms: BASE + 1_000_000,
+        edited_at_ms: None,
+        is_deleted: false,
+        deleted_at_ms: None,
+    };
+
+    assert_eq!(replay_daily_total(vec![source.clone(), correction.clone()]), 400);
+    assert_eq!(
+        arttodo_core::replay_daily_trace(vec![source.clone(), correction.clone()]),
+        vec![600, 400],
+        "a recovery adjustment must be reflected in every replay prefix"
+    );
+    assert_eq!(
+        replay_daily_total(vec![source, correction, later_set]),
+        500,
+        "a later absolute total remains authoritative over earlier source corrections"
+    );
+}
+
 /// Editing an *old* row keeps its slot: it does not get moved after the `set` that followed it.
 #[test]
 fn editing_an_old_row_keeps_its_ordering_slot() {

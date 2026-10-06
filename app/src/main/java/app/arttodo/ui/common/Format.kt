@@ -56,6 +56,12 @@ object Format {
         }
     }
 
+    fun signedLedgerClock(totalSeconds: Long): String {
+        val sign = if (totalSeconds < 0) "−" else ""
+        val magnitude = if (totalSeconds == Long.MIN_VALUE) Long.MAX_VALUE else kotlin.math.abs(totalSeconds)
+        return sign + ledgerClock(magnitude)
+    }
+
     /** `25 分钟` / `1 小时 30 分` / `2 小时 5 分` / `0 分钟`. */
     fun minutes(totalSeconds: Long): String {
         val seconds = totalSeconds.coerceAtLeast(0)

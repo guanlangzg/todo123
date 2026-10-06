@@ -32,7 +32,7 @@ if not exist "app\build\outputs\apk\debug\app-debug.apk" (
 echo OK: app-debug.apk present
 
 echo === gradlew testDebugUnitTest ===
-call gradlew.bat --no-daemon testDebugUnitTest
+call gradlew.bat --no-daemon testDebugUnitTest --rerun
 if errorlevel 1 goto :fail
 
 echo === gradlew lintDebug ===

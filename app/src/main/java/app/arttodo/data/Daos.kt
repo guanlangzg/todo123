@@ -193,6 +193,9 @@ interface LedgerDao {
     @Query("SELECT * FROM ledger_entry WHERE kind = 0 AND ref_id = :refId")
     suspend fun sliceByRef(refId: String): LedgerEntryEntity?
 
+    @Query("SELECT * FROM ledger_entry WHERE kind = 3 AND ref_id = :refId")
+    suspend fun recoveryAdjustmentByRef(refId: String): LedgerEntryEntity?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(row: LedgerEntryEntity): Long
 

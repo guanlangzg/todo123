@@ -14,6 +14,12 @@ fn reduce(state: &DomainState, command: DomainCommand, envelope: &CommandEnvelop
     arttodo_core::reduce(state.clone(), command, envelope.clone())
 }
 
+fn apply(state: &DomainState, command: DomainCommand, id: &str, wall_ms: i64) -> DomainState {
+    let outcome = reduce(state, command, &envelope(id, wall_ms, state.revision));
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    outcome.next_state
+}
+
 fn initial_state(zone_id: &str, created_wall_ms: i64) -> DomainState {
     arttodo_core::initial_state(zone_id.to_string(), created_wall_ms)
 }
@@ -235,5 +241,244 @@ fn nothing_is_booked_before_the_user_decides() {
     assert!(
         state.ledger.is_empty(),
         "a recovery-pending session must not have booked anything"
+    );
+}
+
+#[test]
+fn accepting_a_resumed_countdown_only_books_the_unspent_target_remainder() {
+    let mut state = with_task();
+    state = apply(
+        &state,
+        DomainCommand::StartSession {
+            task_id: "task:t1".to_string(),
+            mode: SessionMode::Countdown,
+            target_seconds: Some(900),
+            replaces_session_id: None,
+        },
+        "countdown-start",
+        BASE,
+    );
+    let session_id = session_id_of(&state);
+    state = apply(
+        &state,
+        DomainCommand::PauseSession {
+            session_id: session_id.clone(),
+        },
+        "countdown-pause",
+        BASE + 600_000,
+    );
+    state = apply(
+        &state,
+        DomainCommand::ResumeSession {
+            session_id: session_id.clone(),
+        },
+        "countdown-resume",
+        BASE + 700_000,
+    );
+    state = apply(
+        &state,
+        DomainCommand::MarkRecoveryPending {
+            session_id: session_id.clone(),
+        },
+        "countdown-lost",
+        BASE + 1_000_000,
+    );
+
+    let recovered = apply(
+        &state,
+        DomainCommand::ResolveRecovery {
+            session_id: session_id.clone(),
+            choice: RecoveryChoice::Accept,
+        },
+        "countdown-recover",
+        BASE + 1_600_000,
+    );
+
+    assert_eq!(
+        replay_daily_total(recovered.ledger.clone()),
+        900,
+        "the already booked 600 seconds leave only 300 seconds for recovery"
+    );
+    assert_eq!(
+        effective_seconds(session_id.clone(), recovered.segments.clone(), BASE + 1_600_000,),
+        900,
+    );
+}
+
+#[test]
+fn modifying_below_closed_investment_appends_auditable_reverse_date_corrections() {
+    let day_one = day_window("2026-03-10".to_string(), ZONE.to_string(), 1).expect("day one");
+    let day_two = day_window("2026-03-11".to_string(), ZONE.to_string(), 1).expect("day two");
+    let mut state = with_task();
+    state = apply(
+        &state,
+        DomainCommand::StartSession {
+            task_id: "task:t1".to_string(),
+            mode: SessionMode::CountUp,
+            target_seconds: None,
+            replaces_session_id: None,
+        },
+        "cross-day-start",
+        day_one.end_wall_ms - 300_000,
+    );
+    let session_id = session_id_of(&state);
+    state = apply(
+        &state,
+        DomainCommand::PauseSession {
+            session_id: session_id.clone(),
+        },
+        "first-pause",
+        day_one.end_wall_ms,
+    );
+    state = apply(
+        &state,
+        DomainCommand::ResumeSession {
+            session_id: session_id.clone(),
+        },
+        "second-start",
+        day_two.start_wall_ms,
+    );
+    state = apply(
+        &state,
+        DomainCommand::PauseSession {
+            session_id: session_id.clone(),
+        },
+        "second-pause",
+        day_two.start_wall_ms + 600_000,
+    );
+    state = apply(
+        &state,
+        DomainCommand::ResumeSession {
+            session_id: session_id.clone(),
+        },
+        "third-start",
+        day_two.start_wall_ms + 601_000,
+    );
+    state = apply(
+        &state,
+        DomainCommand::MarkRecoveryPending {
+            session_id: session_id.clone(),
+        },
+        "cross-day-lost",
+        day_two.start_wall_ms + 700_000,
+    );
+
+    let recovered = apply(
+        &state,
+        DomainCommand::ResolveRecovery {
+            session_id: session_id.clone(),
+            choice: RecoveryChoice::Modify { seconds: 200 },
+        },
+        "cross-day-recover",
+        day_two.start_wall_ms + 1_300_000,
+    );
+
+    let adjustments: Vec<_> = recovered.ledger.iter().filter(|row| row.kind == 3).collect();
+    assert_eq!(adjustments.len(), 2);
+    assert_eq!(adjustments[0].app_date, "2026-03-11");
+    assert_eq!(adjustments[0].delta_seconds, Some(-600));
+    assert_eq!(adjustments[1].app_date, "2026-03-10");
+    assert_eq!(adjustments[1].delta_seconds, Some(-100));
+    assert!(adjustments[0]
+        .ref_id
+        .as_deref()
+        .is_some_and(|id| id.starts_with("recovery:sess:cross-day-start:")));
+    assert_eq!(
+        replay_daily_total(recovered.ledger.clone()),
+        200,
+        "the original automatic rows remain, while the correction reaches the user total"
+    );
+    assert_eq!(
+        project_day_totals(recovered.ledger.clone()),
+        vec![
+            DayTotal {
+                app_date: "2026-03-10".to_string(),
+                seconds: 200,
+            },
+            DayTotal {
+                app_date: "2026-03-11".to_string(),
+                seconds: 0,
+            },
+        ],
+    );
+    assert_eq!(
+        recovered.ledger.iter().filter(|row| row.kind == 0).count(),
+        2,
+        "the original daily slices remain intact"
+    );
+    let newest_slice = recovered
+        .ledger
+        .iter()
+        .filter(|row| row.kind == 0 && row.app_date == "2026-03-11")
+        .max_by_key(|row| row.occurred_wall_ms)
+        .expect("the latest slice");
+    let deleted = apply(
+        &recovered,
+        DomainCommand::DeleteLedgerEntry {
+            ledger_seq: newest_slice.ledger_seq,
+        },
+        "delete-corrected-source",
+        day_two.start_wall_ms + 1_400_000,
+    );
+    assert_eq!(
+        replay_daily_total(deleted.ledger.clone()),
+        200,
+        "deleting a corrected source also removes its recovery adjustment"
+    );
+    assert!(deleted.ledger.iter().any(|row| row.kind == 3 && row.is_deleted));
+    let deleted_audits: Vec<_> = deleted
+        .audits
+        .iter()
+        .filter(|audit| audit.change_kind == 1)
+        .collect();
+    assert_eq!(deleted_audits.len(), 2);
+    assert_ne!(deleted_audits[0].audit_seq, deleted_audits[1].audit_seq);
+    let restored = apply(
+        &deleted,
+        DomainCommand::RestoreLedgerEntry {
+            ledger_seq: newest_slice.ledger_seq,
+        },
+        "restore-corrected-source",
+        day_two.start_wall_ms + 1_500_000,
+    );
+    assert_eq!(replay_daily_total(restored.ledger.clone()), 200);
+
+    let repeated = reduce(
+        &recovered,
+        DomainCommand::ResolveRecovery {
+            session_id,
+            choice: RecoveryChoice::Modify { seconds: 100 },
+        },
+        &envelope(
+            "cross-day-recover-again",
+            day_two.start_wall_ms + 1_301_000,
+            recovered.revision,
+        ),
+    );
+    assert!(repeated.error.is_none(), "{:?}", repeated.error);
+    assert!(repeated.effects.iter().all(|effect| !matches!(
+        effect,
+        LedgerEffect::AppendLedgerEntry { row } if row.kind == 3
+    )));
+    assert_eq!(replay_daily_total(repeated.next_state.ledger.clone()), 200);
+
+    let further_reduced = apply(
+        &state,
+        DomainCommand::ResolveRecovery {
+            session_id: session_id_of(&state),
+            choice: RecoveryChoice::Modify { seconds: 200 },
+        },
+        "cross-day-recover-lower",
+        day_two.start_wall_ms + 1_600_000,
+    );
+    assert_eq!(replay_daily_total(further_reduced.ledger.clone()), 200);
+    assert_eq!(
+        further_reduced
+            .ledger
+            .iter()
+            .filter(|row| row.kind == 3 && !row.is_deleted)
+            .count(),
+        2,
+        "repeated resolution leaves the existing per-slice correction set stable"
     );
 }

@@ -240,6 +240,83 @@ fn an_unknown_task_stops_the_whole_reorder() {
 
 /// The whole reorder is one user action, so it carries one command id and is applied once.
 #[test]
+fn duplicate_task_ids_are_refused_without_writes() {
+    let (state, [a, b, _c]) = three_dailies();
+    let outcome = reduce(
+        &state,
+        DomainCommand::ReorderTasks {
+            kind: TaskKind::Daily,
+            ordered_task_ids: vec![a.clone(), b.clone(), b],
+        },
+        &envelope("duplicate-order", BASE + 10_000, state.revision),
+    );
+
+    assert!(matches!(
+        outcome.error,
+        Some(DomainError::PreconditionFailed { .. })
+    ));
+    assert!(outcome.effects.is_empty());
+    assert_eq!(outcome.next_state.tasks, state.tasks);
+}
+
+#[test]
+fn incomplete_task_group_is_refused_without_writes() {
+    let (state, [a, _b, c]) = three_dailies();
+    let outcome = reduce(
+        &state,
+        DomainCommand::ReorderTasks {
+            kind: TaskKind::Daily,
+            ordered_task_ids: vec![c, a],
+        },
+        &envelope("incomplete-order", BASE + 10_000, state.revision),
+    );
+
+    assert!(matches!(
+        outcome.error,
+        Some(DomainError::PreconditionFailed { .. })
+    ));
+    assert!(outcome.effects.is_empty());
+    assert_eq!(outcome.next_state.tasks, state.tasks);
+}
+
+#[test]
+fn archived_tasks_are_not_required_in_the_visible_group_order() {
+    let (mut state, [a, b, c]) = three_dailies();
+    state = create(
+        &state,
+        TaskKind::Daily,
+        "临时日常",
+        "create-archived",
+        BASE + 4_000,
+    );
+    let archived = "task:create-archived".to_string();
+    let archive = reduce(
+        &state,
+        DomainCommand::ArchiveTask {
+            task_id: archived.clone(),
+        },
+        &envelope("archive-task", BASE + 5_000, state.revision),
+    );
+    assert!(archive.error.is_none(), "{:?}", archive.error);
+    state = archive.next_state;
+
+    let outcome = reduce(
+        &state,
+        DomainCommand::ReorderTasks {
+            kind: TaskKind::Daily,
+            ordered_task_ids: vec![c.clone(), a.clone(), b.clone()],
+        },
+        &envelope("visible-order", BASE + 10_000, state.revision),
+    );
+
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    assert_eq!(sort_key_of(&outcome.next_state, &c), STEP);
+    assert_eq!(sort_key_of(&outcome.next_state, &a), STEP * 2);
+    assert_eq!(sort_key_of(&outcome.next_state, &b), STEP * 3);
+    assert_eq!(sort_key_of(&outcome.next_state, &archived), STEP * 4);
+}
+
+#[test]
 fn repeating_the_same_reorder_id_is_a_duplicate() {
     let (state, [a, b, c]) = three_dailies();
     let envelope = envelope("reorder-once", BASE + 10_000, state.revision);

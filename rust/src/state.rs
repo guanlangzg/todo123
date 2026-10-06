@@ -221,6 +221,104 @@ fn heartbeat_effect(
     }
 }
 
+fn append_recovery_corrections(
+    state: &DomainState,
+    session: &SessionRecord,
+    segments: &[WorkSegment],
+    target_seconds: i64,
+    now: i64,
+    effects: &mut Vec<LedgerEffect>,
+) {
+    let existing_adjustments: i64 = state
+        .ledger
+        .iter()
+        .filter(|row| row.kind == ledger::KIND_RECOVERY_ADJUSTMENT && !row.is_deleted)
+        .filter_map(|row| {
+            row.ref_id
+                .as_deref()
+                .and_then(|ref_id| ref_id.strip_prefix("recovery:"))
+                .filter(|source_ref| ledger::is_session_slice(source_ref, &session.session_id))
+                .map(|_| row.delta_seconds.unwrap_or(0))
+        })
+        .sum();
+    let mut excess = (session::closed_seconds_total(segments, &session.session_id) + existing_adjustments
+        - target_seconds)
+        .max(0);
+    if excess == 0 {
+        return;
+    }
+    let mut slices: Vec<&LedgerRow> = state
+        .ledger
+        .iter()
+        .filter(|row| {
+            row.kind == ledger::KIND_SLICE
+                && row.task_id == session.task_id
+                && row
+                    .ref_id
+                    .as_deref()
+                    .is_some_and(|ref_id| ledger::is_session_slice(ref_id, &session.session_id))
+        })
+        .collect();
+    slices.sort_by_key(|row| (row.occurred_wall_ms, row.ledger_seq));
+    let mut seq = next_ledger_seq(state);
+    let mut audit_seq = next_audit_seq(state);
+    for row in slices.into_iter().rev() {
+        if excess == 0 {
+            break;
+        }
+        let source_ref = row.ref_id.as_deref().unwrap_or_default();
+        let correction_ref = format!("recovery:{source_ref}");
+        let existing: Vec<&LedgerRow> = state
+            .ledger
+            .iter()
+            .filter(|correction| {
+                correction.kind == ledger::KIND_RECOVERY_ADJUSTMENT
+                    && correction.ref_id.as_deref() == Some(correction_ref.as_str())
+                    && !correction.is_deleted
+            })
+            .collect();
+        let already_corrected: i64 = existing
+            .iter()
+            .map(|correction| correction.delta_seconds.unwrap_or(0))
+            .sum();
+        let booked = row.delta_seconds.unwrap_or(0).max(0);
+        let available = (booked + already_corrected).max(0);
+        let reduction = available.min(excess);
+        if reduction == 0 {
+            continue;
+        }
+        let new_delta = already_corrected - reduction;
+        if let Some(existing) = existing.first() {
+            let mut updated = (*existing).clone();
+            let audit = ledger::edit_audit(audit_seq, &updated, Some(new_delta), None, now);
+            audit_seq += 1;
+            effects.push(LedgerEffect::InsertLedgerEntryAudit { audit });
+            updated.delta_seconds = Some(new_delta);
+            updated.edited_at_ms = Some(now);
+            effects.push(LedgerEffect::UpdateLedgerEntry { row: updated });
+        } else {
+            let correction = LedgerRow {
+                ledger_seq: seq,
+                kind: ledger::KIND_RECOVERY_ADJUSTMENT,
+                ref_id: Some(correction_ref),
+                task_id: session.task_id.clone(),
+                app_date: row.app_date.clone(),
+                occurred_wall_ms: now,
+                zone_epoch_seq: row.zone_epoch_seq,
+                delta_seconds: Some(-reduction),
+                set_total_seconds: None,
+                created_wall_ms: now,
+                edited_at_ms: None,
+                is_deleted: false,
+                deleted_at_ms: None,
+            };
+            effects.push(LedgerEffect::AppendLedgerEntry { row: correction });
+            seq += 1;
+        }
+        excess -= reduction;
+    }
+}
+
 /// Turns a closed session's segments into per-day ledger rows. Each slice carries a deterministic
 /// `slice_id`, so replaying the same finish can never double-book the same span (架构契约 §6).
 fn slice_into_ledger(
@@ -582,13 +680,30 @@ fn execute(
             kind,
             ordered_task_ids,
         } => {
+            let visible_group: Vec<&TaskRecord> = state
+                .tasks
+                .iter()
+                .filter(|task| task.kind == *kind && task.archived_at_ms.is_none())
+                .collect();
             for task_id in ordered_task_ids {
                 let task = find_task(state, task_id)?;
-                if task.kind != *kind {
+                if task.kind != *kind || task.archived_at_ms.is_some() {
                     return Err(DomainError::PreconditionFailed {
                         reason: format!("task {task_id} is not in the reordered group"),
                     });
                 }
+            }
+            let unique_ids: std::collections::HashSet<&str> =
+                ordered_task_ids.iter().map(String::as_str).collect();
+            if unique_ids.len() != ordered_task_ids.len()
+                || unique_ids.len() != visible_group.len()
+                || visible_group
+                    .iter()
+                    .any(|task| !unique_ids.contains(task.task_id.as_str()))
+            {
+                return Err(DomainError::PreconditionFailed {
+                    reason: "reorder must contain every visible task exactly once".to_string(),
+                });
             }
             for (index, task_id) in ordered_task_ids.iter().enumerate() {
                 if let Some(task) = next.tasks.iter_mut().find(|task| task.task_id == *task_id) {
@@ -1155,7 +1270,23 @@ fn execute(
         }
         DomainCommand::DeleteLedgerEntry { ledger_seq } => {
             let row = find_row(state, *ledger_seq)?.clone();
-            let audit = ledger::delete_audit(next_audit_seq(state), &row, now);
+            let related_adjustment_ref = (row.kind == ledger::KIND_SLICE)
+                .then(|| row.ref_id.as_ref().map(|source| format!("recovery:{source}")))
+                .flatten();
+            let related_adjustment = related_adjustment_ref.as_deref().and_then(|correction_id| {
+                state
+                    .ledger
+                    .iter()
+                    .find(|candidate| {
+                        candidate.kind == ledger::KIND_RECOVERY_ADJUSTMENT
+                            && candidate.ref_id.as_deref() == Some(correction_id)
+                            && !candidate.is_deleted
+                    })
+                    .cloned()
+            });
+            let mut audit_seq = next_audit_seq(state);
+            let audit = ledger::delete_audit(audit_seq, &row, now);
+            audit_seq += 1;
             next.audits.push(audit.clone());
             effects.push(LedgerEffect::InsertLedgerEntryAudit { audit });
             if let Some(slot) = next.ledger.iter_mut().find(|item| item.ledger_seq == *ledger_seq) {
@@ -1166,6 +1297,23 @@ fn execute(
                 ledger_seq: *ledger_seq,
                 deleted_at_ms: now,
             });
+            if let Some(adjustment) = related_adjustment {
+                let audit = ledger::delete_audit(audit_seq, &adjustment, now);
+                next.audits.push(audit.clone());
+                effects.push(LedgerEffect::InsertLedgerEntryAudit { audit });
+                if let Some(slot) = next
+                    .ledger
+                    .iter_mut()
+                    .find(|item| item.ledger_seq == adjustment.ledger_seq)
+                {
+                    slot.is_deleted = true;
+                    slot.deleted_at_ms = Some(now);
+                }
+                effects.push(LedgerEffect::SoftDeleteLedgerEntry {
+                    ledger_seq: adjustment.ledger_seq,
+                    deleted_at_ms: now,
+                });
+            }
             if row.kind == ledger::KIND_SET_TOTAL {
                 notices.push(Notice {
                     code: "SetTotalDeleted".to_string(),
@@ -1193,7 +1341,12 @@ fn execute(
                     reason: format!("ledger row {ledger_seq} is not deleted"),
                 });
             }
-            let audit = ledger::restore_audit(next_audit_seq(state), &row, now);
+            let restored_adjustment_ref = (row.kind == ledger::KIND_SLICE)
+                .then(|| row.ref_id.as_ref().map(|source| format!("recovery:{source}")))
+                .flatten();
+            let mut audit_seq = next_audit_seq(state);
+            let audit = ledger::restore_audit(audit_seq, &row, now);
+            audit_seq += 1;
             next.audits.push(audit.clone());
             effects.push(LedgerEffect::InsertLedgerEntryAudit { audit });
             if let Some(slot) = next.ledger.iter_mut().find(|item| item.ledger_seq == *ledger_seq) {
@@ -1210,6 +1363,32 @@ fn execute(
                     ..row
                 },
             });
+            if let Some(adjustment) = restored_adjustment_ref.as_deref().and_then(|adjustment_ref| {
+                state.ledger.iter().find(|candidate| {
+                    candidate.kind == ledger::KIND_RECOVERY_ADJUSTMENT
+                        && candidate.ref_id.as_deref() == Some(adjustment_ref)
+                        && candidate.is_deleted
+                })
+            }) {
+                let audit = ledger::restore_audit(audit_seq, adjustment, now);
+                next.audits.push(audit.clone());
+                effects.push(LedgerEffect::InsertLedgerEntryAudit { audit });
+                if let Some(slot) = next
+                    .ledger
+                    .iter_mut()
+                    .find(|item| item.ledger_seq == adjustment.ledger_seq)
+                {
+                    slot.is_deleted = false;
+                    slot.deleted_at_ms = None;
+                }
+                effects.push(LedgerEffect::UpdateLedgerEntry {
+                    row: LedgerRow {
+                        is_deleted: false,
+                        deleted_at_ms: None,
+                        ..adjustment.clone()
+                    },
+                });
+            }
         }
         DomainCommand::AppendZoneEpoch {
             zone_id,
@@ -1290,6 +1469,9 @@ fn execute(
                 });
             }
             let segments = state.segments_for(session_id);
+            if matches!(choice, RecoveryChoice::Modify { seconds } if *seconds < 0) {
+                return Err(DomainError::NegativeSeconds);
+            }
             let heartbeat_of = |fallback: i64| {
                 state
                     .heartbeats
@@ -1316,26 +1498,33 @@ fn execute(
                     closed_segment: None,
                     opened_segment: None,
                 });
+                if let RecoveryChoice::Modify { seconds } = choice {
+                    append_recovery_corrections(state, record, &segments, *seconds, now, &mut effects);
+                }
                 next.active_session_id = None;
                 effects.push(LedgerEffect::SetActiveSession { session_id: None });
+                let resulting_seconds = match choice {
+                    RecoveryChoice::Modify { seconds } => *seconds,
+                    _ => already_booked,
+                };
                 notices.push(Notice {
                     code: "RecoveryPausedNoGap".to_string(),
                     affected_app_date: None,
-                    resulting_total_seconds: Some(already_booked),
-                    detail: format!("booked={already_booked} chosen={choice:?}"),
+                    resulting_total_seconds: Some(resulting_seconds),
+                    detail: format!("booked={resulting_seconds} chosen={choice:?}"),
                 });
                 return Ok((next, effects, notices));
             };
             let heartbeat = heartbeat_of(open.start_wall_ms);
+            let closed_total = session::closed_seconds_total(&segments, session_id);
+            let remaining_target = record.target_seconds.map(|target| (target - closed_total).max(0));
             let amounts =
-                session::recovery_amounts(open.start_wall_ms, heartbeat, now, choice, record.target_seconds)?;
-            // `Accept`/`Discard` count the open segment's own span (what the prompt offers to book);
-            // `Modify` carries the user's authoritative *session total*, which is what its field is
-            // labelled with. Either way the end instant comes from the same mapping, so the closed
-            // segments are never counted twice.
+                session::recovery_amounts(open.start_wall_ms, heartbeat, now, choice, remaining_target)?;
+            // `Accept`/`Discard` add only this open segment's contribution to closed segments;
+            // `Modify` sets the authoritative session total and may reduce earlier closed slices.
             let booked_total = match choice {
                 RecoveryChoice::Modify { seconds } => *seconds,
-                _ => session::closed_seconds_total(&segments, session_id) + amounts.booked_seconds,
+                _ => closed_total + amounts.booked_seconds,
             };
             let end_wall_ms =
                 session::total_end_wall_ms(&segments, session_id, booked_total).unwrap_or(open.start_wall_ms);
@@ -1362,6 +1551,9 @@ fn execute(
             next.active_session_id = None;
             effects.push(LedgerEffect::SetActiveSession { session_id: None });
             slice_into_ledger(state, record, &closed, &mut effects, &mut notices)?;
+            if let RecoveryChoice::Modify { seconds } = choice {
+                append_recovery_corrections(state, record, &segments, *seconds, now, &mut effects);
+            }
             notices.push(Notice {
                 code: "RecoveryResolved".to_string(),
                 affected_app_date: None,

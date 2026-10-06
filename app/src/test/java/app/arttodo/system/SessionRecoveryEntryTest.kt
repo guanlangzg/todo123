@@ -1,6 +1,12 @@
 package app.arttodo.system
 
 import android.content.Context
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
 import app.arttodo.ArtTodoApplication
 import app.arttodo.core.SessionMode
@@ -10,10 +16,13 @@ import app.arttodo.data.DomainCommands
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.android.controller.ServiceController
 
 /**
  * AC-09 / 架构契约 §7.3: what makes an active session "awaiting adjudication" after a process restart.
@@ -32,6 +41,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class SessionRecoveryEntryTest {
+
+    @get:Rule
+    val compose = createComposeRule()
 
     private val container
         get() = (ApplicationProvider.getApplicationContext<Context>() as ArtTodoApplication).container
@@ -102,6 +114,103 @@ class SessionRecoveryEntryTest {
         assertThat(executor.readState().sessions.single { it.sessionId == sessionId }.state)
             .isEqualTo(SessionState.RUNNING)
         assertThat(container.sessionOwner.owns(sessionId)).isTrue()
+    }
+
+    @Test
+    fun a_paused_countdown_recovery_projection_does_not_double_count_its_closed_segment(): Unit = runBlocking {
+        val executor = container.commandExecutor
+        executor.readState().activeSessionId?.let { executor.dispatch(DomainCommands.finishNow(it)) }
+        executor.dispatch(DomainCommands.createTask(TaskKind.TEMPORARY, "暂停恢复预览", ""), "cmd-paused-projection-task")
+        val taskId = executor.readState().tasks.first { it.title == "暂停恢复预览" }.taskId
+        executor.dispatch(
+            DomainCommands.startSession(taskId, SessionMode.COUNTDOWN, 600, null),
+            "cmd-paused-projection-start",
+        )
+        val sessionId = requireNotNull(executor.readState().activeSessionId)
+        val sessionDao = container.database.sessionDao()
+        val session = requireNotNull(sessionDao.session(sessionId))
+        sessionDao.segments(sessionId).single().let { segment ->
+            sessionDao.upsertSegment(segment.copy(startWallMs = segment.startWallMs - 300_000))
+        }
+        executor.dispatch(DomainCommands.pauseSession(sessionId), "cmd-paused-projection-pause")
+        container.sessionOwner.release(sessionId)
+        val state = executor.readState()
+        container.assessRecovery(state, sessionId)
+
+        val viewModel = app.arttodo.ui.AppViewModel(container)
+        compose.setContent {
+            val uiState by viewModel.state.collectAsState()
+            androidx.compose.material3.Text("trusted=${uiState.recoveryAmounts?.trustedSeconds}")
+            androidx.compose.material3.Text("gap=${uiState.recoveryAmounts?.gapSeconds}")
+            androidx.compose.material3.Text("booked=${uiState.recoveryAmounts?.bookedSeconds}")
+        }
+        compose.waitUntil(timeoutMillis = 10_000) {
+            compose.waitForIdle()
+            compose.onAllNodesWithText("trusted=300").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("trusted=300").assertIsDisplayed()
+        compose.onNodeWithText("gap=0").assertIsDisplayed()
+        compose.onNodeWithText("booked=300").assertIsDisplayed()
+    }
+
+    @Test
+    fun an_old_deadline_service_request_does_not_steal_the_active_session_owner(): Unit = runBlocking {
+        val executor = container.commandExecutor
+        val sessionId = runningSession("旧闹钟隔离")
+        container.sessionOwner.claim(sessionId)
+        val staleId = "session:stale-deadline"
+        val controller = Robolectric.buildService(SessionRuntimeService::class.java)
+        controller.create()
+
+        controller.get().onStartCommand(
+            android.content.Intent(ApplicationProvider.getApplicationContext<Context>(), SessionRuntimeService::class.java)
+                .putExtra(SessionRuntimeService.EXTRA_SESSION_ID, staleId),
+            0,
+            41,
+        )
+        kotlinx.coroutines.delay(100)
+
+        assertThat(container.sessionOwner.sessionId()).isEqualTo(sessionId)
+        assertThat(executor.readState().activeSessionId).isEqualTo(sessionId)
+        assertThat(executor.readState().sessions.single { it.sessionId == sessionId }.state)
+            .isEqualTo(SessionState.RUNNING)
+        controller.destroy()
+    }
+
+    @Test
+    fun a_due_deadline_finishes_the_session_without_waiting_for_the_ticker(): Unit = runBlocking {
+        val executor = container.commandExecutor
+        executor.readState().activeSessionId?.let { executor.dispatch(DomainCommands.finishNow(it)) }
+        executor.dispatch(DomainCommands.createTask(TaskKind.TEMPORARY, "到点立即结束", ""), "cmd-deadline-task")
+        val taskId = executor.readState().tasks.first { it.title == "到点立即结束" }.taskId
+        executor.dispatch(
+            DomainCommands.startSession(taskId, SessionMode.COUNTDOWN, 60, null),
+            "cmd-deadline-start",
+        )
+        val sessionId = requireNotNull(executor.readState().activeSessionId)
+        val dao = container.database.sessionDao()
+        val session = requireNotNull(dao.session(sessionId))
+        dao.updateSession(session.copy(createdWallMs = session.createdWallMs - 60_000))
+        dao.segments(sessionId).single().let { segment ->
+            dao.upsertSegment(segment.copy(startWallMs = segment.startWallMs - 60_000))
+        }
+        container.sessionOwner.claim(sessionId)
+        val controller = Robolectric.buildService(SessionRuntimeService::class.java)
+        controller.create()
+
+        controller.get().onStartCommand(
+            android.content.Intent(ApplicationProvider.getApplicationContext<Context>(), SessionRuntimeService::class.java)
+                .putExtra(SessionRuntimeService.EXTRA_SESSION_ID, sessionId),
+            0,
+            42,
+        )
+        kotlinx.coroutines.delay(100)
+
+        val after = executor.readState()
+        assertThat(after.activeSessionId).isNull()
+        assertThat(after.sessions.single { it.sessionId == sessionId }.state).isEqualTo(SessionState.FINISHED)
+        assertThat(FocusReminder.isResultPending(ApplicationProvider.getApplicationContext<Context>(), sessionId)).isTrue()
+        controller.destroy()
     }
 
     /** A finished session is not recoverable, and the assessment must not touch it. */

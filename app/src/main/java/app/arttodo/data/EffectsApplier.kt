@@ -162,14 +162,15 @@ class EffectsApplier(
 
                 is LedgerEffect.AppendLedgerEntry -> {
                     val row = effect.row.toEntity()
-                    // kind=0 (automatic slice) is the case the contract keys for determinism: its
-                    // `slice_id` is a pure function of the booked span, so the same span replayed
-                    // after a process rebuild — with a brand new command id — must still land as one
-                    // row (架构契约 §6 rule 4). kind=1/2 rows have no deterministic key; a replay of
-                    // those is already refused by the core's `DuplicateCommand` check against
-                    // `command_log`, so deduping them here by content would only risk silently
-                    // dropping a legitimate second entry.
-                    val duplicateSlice = row.refId != null && ledgerDao.sliceByRef(row.refId) != null
+                    // kind=0 automatic slices are keyed by their deterministic span. Recovery
+                    // adjustments also carry a deterministic source-slice key, so a replay can safely
+                    // skip an already persisted adjustment without content-based deduplication.
+                    // Other ledger rows rely on the command log and are never heuristically merged.
+                    val duplicateSlice = row.refId != null && when (row.kind) {
+                        0 -> ledgerDao.sliceByRef(row.refId) != null
+                        3 -> ledgerDao.recoveryAdjustmentByRef(row.refId) != null
+                        else -> false
+                    }
                     if (!duplicateSlice) ledgerDao.insert(row)
                     applied++
                 }

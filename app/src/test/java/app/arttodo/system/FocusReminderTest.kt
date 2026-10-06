@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
@@ -21,6 +22,23 @@ class FocusReminderTest {
         assertThat(publicVersion.extras.getCharSequence(android.app.Notification.EXTRA_TEXT).toString())
             .isEqualTo("剩余时间 2:05")
         assertThat(publicVersion.visibility).isEqualTo(android.app.Notification.VISIBILITY_PUBLIC)
+    }
+
+    @Test
+    fun deadline_uses_the_remaining_running_time_and_can_be_cancelled_by_session() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val alarmManager = context.getSystemService(android.app.AlarmManager::class.java)
+        val sessionId = "deadline-session"
+        val before = System.currentTimeMillis()
+
+        SessionDeadline.schedule(context, sessionId, targetSeconds = 900, elapsedSeconds = 600, nowWallMs = before)
+        val scheduled = shadowOf(alarmManager).nextScheduledAlarm
+        assertThat(scheduled).isNotNull()
+        assertThat(scheduled!!.triggerAtTime).isAtLeast(before + 299_000)
+        assertThat(scheduled.triggerAtTime).isAtMost(before + 301_000)
+
+        SessionDeadline.cancel(context, sessionId)
+        assertThat(shadowOf(alarmManager).nextScheduledAlarm).isNull()
     }
 
     @Test

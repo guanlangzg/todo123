@@ -437,13 +437,15 @@ fun RecordScreen(modifier: Modifier = Modifier) {
             row = row,
             onDismiss = { editingRow = null },
             onConfirm = { newSeconds ->
-                viewModel.editLedgerEntry(
-                    ledgerSeq = row.ledgerSeq,
-                    // Exactly one of the two must be set and it must match the row's kind, or the core
-                    // returns a ledger invariant violation (架构契约 §4.3.2).
-                    newDeltaSeconds = if (row.kind == 1) newSeconds else null,
-                    newSetTotalSeconds = if (row.kind == 2) newSeconds else null,
-                )
+                if (row.kind == 1 || row.kind == 2) {
+                    viewModel.editLedgerEntry(
+                        ledgerSeq = row.ledgerSeq,
+                        // Exactly one of the two must be set and it must match the row's kind, or the core
+                        // returns a ledger invariant violation (架构契约 §4.3.2).
+                        newDeltaSeconds = if (row.kind == 1) newSeconds else null,
+                        newSetTotalSeconds = if (row.kind == 2) newSeconds else null,
+                    )
+                }
                 editingRow = null
             },
         )
@@ -755,7 +757,7 @@ private fun LedgerTaskGroup(
                 row = row,
                 recordedTitle = rowTitles[row.ledgerSeq],
                 currentTitle = taskTitle,
-                onEdit = { onEdit(row) },
+                onEdit = if (row.kind == 1 || row.kind == 2) ({ onEdit(row) }) else null,
                 onDelete = { onDelete(row) },
             )
             Spacer(Modifier.height(Space.xs))
@@ -777,32 +779,29 @@ private fun LedgerRowItem(
     row: LedgerRow,
     recordedTitle: LedgerRowTitle?,
     currentTitle: String,
-    onEdit: () -> Unit,
+    onEdit: (() -> Unit)?,
     onDelete: () -> Unit,
 ) {
     val seconds = row.setTotalSeconds ?: row.deltaSeconds ?: 0
     val label = when (row.kind) {
         0 -> "自动计时"
         1 -> "手动增加"
+        3 -> "恢复修正"
         else -> "设为当日总量"
     }
     val source = when (row.kind) {
         0 -> "自动"
         1 -> "手动"
+        3 -> "恢复"
         else -> "修正"
     }
     val snapshot = recordedTitle?.takeIf { it.isTitleSnapshot }?.title?.takeIf { it.isNotBlank() }
     val renamed = snapshot != null && snapshot != currentTitle
     val sourceLine = if (row.editedAtMs != null) "已修改 · 来源：$source" else "来源：$source"
 
-    Row(
+    val rowSemantics = if (onEdit != null) {
         Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .clip(RoundedCornerShape(Radius.sm))
-            .background(Studio.colors.surfaceCard)
-            .clickable(role = Role.Button, onClick = onEdit)
-            // After `clickable`: the merged description must survive the node it installs.
+            .clickable(role = Role.Button) { onEdit() }
             .semantics(mergeDescendants = true) {
                 contentDescription = buildString {
                     if (snapshot != null) {
@@ -814,6 +813,25 @@ private fun LedgerRowItem(
                 }
                 role = Role.Button
             }
+    } else {
+        Modifier.semantics(mergeDescendants = true) {
+            contentDescription = buildString {
+                if (snapshot != null) {
+                    append("当时名称：").append(snapshot).append('，')
+                    if (renamed) append("当前名称：").append(currentTitle).append('，')
+                }
+                append(label).append('，').append(Format.spokenDuration(seconds))
+                append("，来源：").append(source)
+            }
+        }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 56.dp)
+            .clip(RoundedCornerShape(Radius.sm))
+            .background(Studio.colors.surfaceCard)
+            .then(rowSemantics)
             .padding(start = Space.m, end = Space.xs),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -846,7 +864,7 @@ private fun LedgerRowItem(
             )
         }
         Text(
-            text = Format.clock(seconds),
+            text = if (row.kind == 3) Format.signedLedgerClock(seconds) else Format.clock(seconds),
             style = Studio.text.titleM.merge(MonoTabular),
             color = Studio.colors.ink,
         )

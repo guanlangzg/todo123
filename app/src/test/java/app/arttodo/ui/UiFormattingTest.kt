@@ -43,6 +43,12 @@ class UiFormattingTest {
     }
 
     @Test
+    fun ledger_adjustments_show_the_negative_sign_and_absolute_duration() {
+        assertThat(Format.signedLedgerClock(-600)).isEqualTo("−10:00")
+        assertThat(Format.signedLedgerClock(600)).isEqualTo("10:00")
+    }
+
+    @Test
     fun ledger_clock_drops_the_leading_hour_zero_but_keeps_the_hour() {
         assertThat(Format.ledgerClock(4_356)).isEqualTo("1:12:36")
         assertThat(Format.ledgerClock(2_700)).isEqualTo("45:00")
