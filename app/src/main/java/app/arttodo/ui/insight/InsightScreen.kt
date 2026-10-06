@@ -440,17 +440,27 @@ internal fun HeatMap(
     val selectedSeconds = totalsByDate[selectedDate] ?: 0
     val selectedHasRecord = hasRecordByDate(selectedDate) && selectedDate.startsWith("%04d-".format(year))
     val selectedStep = heatStepOf(selectedSeconds, selectedHasRecord)
+    val yearLabel = "%04d-".format(year)
+    val yearDayCount = weeks.sumOf { week -> week.count { it.startsWith(yearLabel) } }
     val selectedDescription = buildString {
         append(Format.spokenDate(selectedDate))
         append("，")
-        append(if (selectedStep == HeatStep.None) "无记录" else "投入 ${Format.minutes(selectedSeconds)}")
+        append(
+            when (selectedStep) {
+                HeatStep.None -> "无记录"
+                HeatStep.Zero -> "投入 0 秒"
+                else -> "投入 ${Format.spokenDuration(selectedSeconds)}"
+            },
+        )
     }
+    val heatMapDescription =
+        "全年热力图，$selectedDescription，${taskCountByDate[selectedDate] ?: 0} 个任务。共 $yearDayCount 天。"
 
     Column(
         Modifier
             .fillMaxWidth()
             .semantics {
-                contentDescription = "全年热力图，$selectedDescription，${taskCountByDate[selectedDate] ?: 0} 个任务。共 ${weeks.sumOf { it.size }} 天。"
+                contentDescription = heatMapDescription
                 customActions = listOf(
                     CustomAccessibilityAction("上一格") { move(-1L); true },
                     CustomAccessibilityAction("下一格") { move(1L); true },
@@ -477,7 +487,7 @@ internal fun HeatMap(
                     .weight(1f)
                     .horizontalScroll(scrollState)
                     .clearAndSetSemantics {
-                        contentDescription = "全年热力图，${selectedDescription}，${taskCountByDate[selectedDate] ?: 0} 个任务。共 ${weeks.sumOf { it.size }} 天。"
+                        contentDescription = heatMapDescription
                         customActions = listOf(
                             CustomAccessibilityAction("上一格") { move(-1L); true },
                             CustomAccessibilityAction("下一格") { move(1L); true },

@@ -428,8 +428,89 @@ class ComposeAccessibilityTest {
             }
         }
         val tree = compose.onRoot(useUnmergedTree = true).printToString(maxDepth = 100)
-        assertThat(tree).contains("全年热力图，2026 年 3 月 4 日 星期三，投入 1 小时 32 分，0 个任务。共 371 天")
+        assertThat(tree).contains("全年热力图，2026 年 3 月 4 日 星期三，投入 1 小时 32 分 0 秒，0 个任务。共 365 天")
+        assertThat(tree).doesNotContain("共 371 天")
         assertThat(tree).contains("CustomActions = '[CustomAccessibilityAction(label=上一格")
+    }
+
+    @Test
+    fun the_heat_map_accessibility_description_preserves_seconds_below_one_minute() {
+        val vm = viewModel()
+        val state = vm.state.value.copy(
+            loading = false,
+            today = "2026-10-06",
+            dayTotals = listOf(DayTotal(appDate = "2026-10-06", seconds = 14L)),
+        )
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalAppState provides state,
+                LocalAppViewModel provides vm,
+            ) {
+                StudioTheme(darkTheme = false, reducedMotion = true, powerSave = false) {
+                    Box(Modifier.fillMaxSize().background(Studio.colors.canvas)) {
+                        app.arttodo.ui.insight.InsightScreen()
+                    }
+                }
+            }
+        }
+
+        val tree = compose.onRoot(useUnmergedTree = true).printToString(maxDepth = 100)
+        assertThat(tree).contains("全年热力图，2026 年 10 月 6 日 星期二，投入 14 秒，0 个任务。共 365 天")
+        assertThat(tree).doesNotContain("全年热力图，2026 年 10 月 6 日 星期二，投入 0 分钟")
+    }
+
+    @Test
+    fun the_heat_map_announces_zero_investment_separately_from_no_record() {
+        val vm = viewModel()
+        val state = vm.state.value.copy(
+            loading = false,
+            today = "2026-10-06",
+            dayTotals = listOf(
+                DayTotal(appDate = "2026-10-05", seconds = 30L),
+                DayTotal(appDate = "2026-10-06", seconds = 0L),
+            ),
+        )
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalAppState provides state,
+                LocalAppViewModel provides vm,
+            ) {
+                StudioTheme(darkTheme = false, reducedMotion = true, powerSave = false) {
+                    Box(Modifier.fillMaxSize().background(Studio.colors.canvas)) {
+                        app.arttodo.ui.insight.InsightScreen()
+                    }
+                }
+            }
+        }
+
+        val tree = compose.onRoot(useUnmergedTree = true).printToString(maxDepth = 100)
+        assertThat(tree).contains("全年热力图，2026 年 10 月 6 日 星期二，投入 0 秒")
+        assertThat(tree).doesNotContain("全年热力图，2026 年 10 月 6 日 星期二，无记录")
+    }
+
+    @Test
+    fun the_heat_map_counts_leap_year_days_without_padding_dates() {
+        val vm = viewModel()
+        val state = vm.state.value.copy(
+            loading = false,
+            today = "2024-03-04",
+            dayTotals = listOf(DayTotal(appDate = "2024-03-04", seconds = 1L)),
+        )
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalAppState provides state,
+                LocalAppViewModel provides vm,
+            ) {
+                StudioTheme(darkTheme = false, reducedMotion = true, powerSave = false) {
+                    Box(Modifier.fillMaxSize().background(Studio.colors.canvas)) {
+                        app.arttodo.ui.insight.InsightScreen()
+                    }
+                }
+            }
+        }
+
+        val tree = compose.onRoot(useUnmergedTree = true).printToString(maxDepth = 100)
+        assertThat(tree).contains("全年热力图，2024 年 3 月 4 日 星期一，投入 1 秒，0 个任务。共 366 天")
     }
 
     /**
