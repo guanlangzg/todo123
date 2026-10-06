@@ -189,7 +189,7 @@ pub struct WorkSegment {
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct LedgerRow {
     pub ledger_seq: i64,
-    /// 0 = automatic slice, 1 = manual add, 2 = set-total.
+    /// 0 = automatic slice, 1 = manual add, 2 = set-total, 3 = recovery adjustment.
     pub kind: i32,
     pub ref_id: Option<String>,
     pub task_id: String,

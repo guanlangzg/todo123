@@ -175,6 +175,117 @@ fn accepting_a_paused_recovery_does_not_book_the_paused_span() {
     assert_eq!(booked(&retry.next_state), 600);
 }
 
+#[test]
+fn modifying_a_paused_recovery_can_reduce_previously_booked_segments() {
+    let (state, session_id) = paused_session_lost_to_a_process_death();
+    assert_eq!(booked(&state), 600);
+
+    let outcome = reduce(
+        &state,
+        DomainCommand::ResolveRecovery {
+            session_id: session_id.clone(),
+            choice: RecoveryChoice::Modify { seconds: 300 },
+        },
+        &envelope("modify-paused-lower", THREE_HOURS_LATER, state.revision),
+    );
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    assert_eq!(booked(&outcome.next_state), 300);
+    assert_eq!(
+        outcome
+            .next_state
+            .ledger
+            .iter()
+            .filter(|row| row.kind == 0)
+            .count(),
+        1,
+        "the original automatic slice remains intact"
+    );
+    assert_eq!(
+        outcome
+            .next_state
+            .ledger
+            .iter()
+            .find(|row| row.kind == 3)
+            .and_then(|row| row.delta_seconds),
+        Some(-300),
+    );
+    assert_eq!(
+        last_segment(&outcome.next_state, &session_id).end_wall_ms,
+        Some(PAUSED_AT),
+        "a correction does not extend the paused segment"
+    );
+}
+
+#[test]
+fn modifying_a_paused_recovery_updates_an_existing_slice_correction_by_its_source_key() {
+    let (mut state, session_id) = paused_session_lost_to_a_process_death();
+    let source = state
+        .ledger
+        .iter()
+        .find(|row| row.kind == 0)
+        .cloned()
+        .expect("the closed slice");
+    let next_seq = state.ledger.iter().map(|row| row.ledger_seq).max().unwrap_or(0) + 1;
+    state.ledger.push(LedgerRow {
+        ledger_seq: next_seq,
+        kind: 3,
+        ref_id: Some(format!("recovery:{}", source.ref_id.as_deref().unwrap())),
+        task_id: source.task_id.clone(),
+        app_date: source.app_date.clone(),
+        occurred_wall_ms: PAUSED_AT + 1,
+        zone_epoch_seq: source.zone_epoch_seq,
+        delta_seconds: Some(-200),
+        set_total_seconds: None,
+        created_wall_ms: PAUSED_AT + 1,
+        edited_at_ms: None,
+        is_deleted: false,
+        deleted_at_ms: None,
+    });
+
+    let outcome = reduce(
+        &state,
+        DomainCommand::ResolveRecovery {
+            session_id,
+            choice: RecoveryChoice::Modify { seconds: 250 },
+        },
+        &envelope(
+            "modify-existing-paused-correction",
+            THREE_HOURS_LATER,
+            state.revision,
+        ),
+    );
+    assert!(outcome.error.is_none(), "{:?}", outcome.error);
+    assert_eq!(booked(&outcome.next_state), 250);
+    let corrections: Vec<_> = outcome
+        .next_state
+        .ledger
+        .iter()
+        .filter(|row| row.kind == 3 && !row.is_deleted)
+        .collect();
+    assert_eq!(corrections.len(), 1);
+    assert_eq!(corrections[0].delta_seconds, Some(-350));
+    assert_eq!(outcome.next_state.audits.len(), 1);
+    assert_eq!(outcome.next_state.audits[0].new_delta_seconds, Some(-350));
+}
+
+#[test]
+fn a_paused_recovery_rejects_negative_modify_without_writes() {
+    let (state, session_id) = paused_session_lost_to_a_process_death();
+    let outcome = reduce(
+        &state,
+        DomainCommand::ResolveRecovery {
+            session_id,
+            choice: RecoveryChoice::Modify { seconds: -5 },
+        },
+        &envelope("modify-paused-negative", THREE_HOURS_LATER, state.revision),
+    );
+
+    assert!(matches!(outcome.error, Some(DomainError::NegativeSeconds)));
+    assert!(outcome.effects.is_empty());
+    assert_eq!(outcome.next_state.ledger, state.ledger);
+    assert_eq!(outcome.next_state.sessions, state.sessions);
+}
+
 /// Discard is the same story: the paused time was never bookable in the first place.
 #[test]
 fn discarding_a_paused_recovery_keeps_only_the_closed_span() {

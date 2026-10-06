@@ -165,6 +165,12 @@
 
 ### 倒计时结果入口与回前台重读（2026-10-06，已实跑）
 
+- **账本恢复更正语义（2026-10-06）**：kind=3 adjustment 必须引用源自动 slice，按源切片时序参与 `replay_total` 与 `replay_trace`；暂停态（无 open segment）Modify 也要能冲减已记账投入。再次 Modify 更新同一 slice 的 adjustment 行并写 edit audit，现存 adjustment 必须先映射到源 ref 计算有效投入，避免二次超减。删除/撤销源 slice 时同事务软删/恢复 adjustment。一个命令写多个 audit 时，`audit_seq` 必须在该命令内递增。回归测试：`rust/tests/recovery_idempotency.rs`、`recovery_paused.rs`、`ledger_semantics.rs`。
+- **Compose/Robolectric 异步状态断言**：ViewModel 初次 refresh 通过 `viewModelScope` 在主 looper 异步运行；`runBlocking + delay` 不保证 Compose 已读到更新状态。页面测试先 `setContent`，再用 `compose.waitUntil { compose.waitForIdle(); ... }` 等待实际 UI 节点。
+- **Android countdown deadline**：deadline 是唤醒提示，必须再次核对数据库 active session；Owner 的条件认领应原子拒绝与当前持有 session 不同的陈旧请求。暂停取消 deadline，续计按累计运行段重新计算剩余时间，到点处理与 15 秒 ticker 共用结束路径。
+
+### 倒计时结果入口与回前台重读（2026-10-06，已实跑）
+
 - **后台到点的结果页原本不可发现**：`FocusScreen` 只在 `completedCountdownSession.taskId == taskId` 时渲染结果页，而 `SessionRuntimeService` 是直接向核心写库（`CommandExecutor.dispatch` + `FocusReminder.countdownFinished`），既不导航也不通知 ViewModel；从通知点回来只走 `onNewIntent`（`CLEAR_TOP|SINGLE_TOP`），进程内快照永远是旧的。三处接线：今天页 `countdown_result` 入口（`TodayScreen.kt:139`，放在空态/错误**提前 return 之前**）、`AppViewModel.consumeCountdownResult`（清标记 + `refresh()`）、`ArtTodoNavHost` 的 `LifecycleResumeEffect` 回前台重读。
 - **【真实缺陷，已修】「继续专注」原本是死路**：结果页第二个分支的 `onContinue` 只设 `continueMinutes`，而分支条件 `state.completedCountdownSession?.taskId == taskId` 仍为真 → 结果页原地重绘，用户永远看不到选择器。清标记必须同时重新投影（`refresh()`），只写 prefs 不够。守护测试 `TodayCountdownResultEntryTest.continuing_from_the_result_requires_another_explicit_start`。
 - **页面级测试若在 `setContent` 之前用 `waitUntil` 等状态会必然超时**：没进组合时 `compose.waitForIdle()` 不驱动 Robolectric 主 looper，`viewModelScope` 的续体不恢复（实测 10s 超时）。顺序只能是先 `setContent`，再等 UI 节点/状态。

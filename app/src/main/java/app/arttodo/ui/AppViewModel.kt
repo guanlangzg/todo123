@@ -242,17 +242,32 @@ class AppViewModel(
             // paused time is never investment (AC-05), and the prompt must not offer what the
             // resolution would refuse to book.
             val runningUntil = recoverySegment.endWallMs ?: container.wallClock()
-            successOrNull(
+            val pausedRecovery = recoverySegment.endWallMs != null
+            val closedSeconds = domain.segments
+                .filter { it.sessionId == active.sessionId && it.endWallMs != null }
+                .sumOf { segment ->
+                    ((segment.endWallMs ?: segment.startWallMs) - segment.startWallMs).coerceAtLeast(0) / 1000
+                }
+            val targetRemaining = active.targetSeconds?.let { (it - closedSeconds).coerceAtLeast(0) }
+            if (pausedRecovery) {
+                RecoveryAmounts(
+                    trustedSeconds = closedSeconds,
+                    gapSeconds = 0,
+                    bookedSeconds = closedSeconds,
+                )
+            } else successOrNull(
                 bridge.recoveryAmounts(
                     recoverySegment.startWallMs,
                     recoveryBeat.wallMs,
                     runningUntil,
                     RecoveryChoice.Accept,
-                    active.targetSeconds,
+                    targetRemaining,
                 ),
             )?.let { amounts ->
-                if (active.targetSeconds == null) amounts else amounts.copy(
-                    gapSeconds = (amounts.bookedSeconds - amounts.trustedSeconds).coerceAtLeast(0),
+                amounts.copy(
+                    trustedSeconds = closedSeconds + amounts.trustedSeconds,
+                    gapSeconds = if (active.targetSeconds == null) amounts.gapSeconds
+                    else (amounts.bookedSeconds - amounts.trustedSeconds).coerceAtLeast(0),
                 )
             }
         } else null
@@ -413,19 +428,32 @@ class AppViewModel(
                 }
                 is Executed.Applied -> {
                     refresh()
+                    if (replacesSessionId != null) {
+                        app.arttodo.system.SessionDeadline.cancel(container.applicationContext, replacesSessionId)
+                    }
                     if (rememberMinutes != null) {
                         dispatch(DomainCommand.SetTaskRecentCountdown(taskId = taskId, minutes = rememberMinutes.toUInt()))
                     }
-                    val active = executor.readState().activeSessionId
+                    val state = executor.readState()
+                    val active = state.activeSessionId
                     if (active != null) {
-                        runCatching { container.startSessionService(active) }
-                            .onFailure { _state.value = _state.value.copy(error = "后台计时服务启动失败；请保持应用打开。") }
-                        val record = executor.readState().sessions.firstOrNull { it.sessionId == active }
-                        if (targetSeconds != null && record != null) {
+                        if (targetSeconds != null) {
+                            val elapsed = state.segments
+                                .filter { it.sessionId == active }
+                                .sumOf { segment ->
+                                    val end = segment.endWallMs ?: container.wallClock()
+                                    if (end <= segment.startWallMs) 0L else (end - segment.startWallMs) / 1000L
+                                }
                             app.arttodo.system.SessionDeadline.schedule(
-                                container.applicationContext, active, targetSeconds, record.createdWallMs,
+                                container.applicationContext,
+                                active,
+                                targetSeconds,
+                                elapsed,
+                                container.wallClock(),
                             )
                         }
+                        runCatching { container.startSessionService(active) }
+                            .onFailure { _state.value = _state.value.copy(error = "后台计时服务启动失败；请保持应用打开。") }
                     }
                     onResult(null)
                 }
@@ -434,7 +462,11 @@ class AppViewModel(
     }
 
     fun pauseSession(sessionId: String) {
-        dispatch(DomainCommands.pauseSession(sessionId))
+        dispatch(DomainCommands.pauseSession(sessionId)) { failure ->
+            if (failure == null) {
+                app.arttodo.system.SessionDeadline.cancel(container.applicationContext, sessionId)
+            }
+        }
     }
 
     fun resumeSession(sessionId: String) {
@@ -442,6 +474,24 @@ class AppViewModel(
             when (val result = executor.dispatch(DomainCommands.resumeSession(sessionId))) {
                 is Executed.Applied -> {
                     refresh()
+                    val state = executor.readState()
+                    val session = state.sessions.firstOrNull { it.sessionId == sessionId }
+                    val target = session?.targetSeconds
+                    if (target != null) {
+                        val elapsed = state.segments
+                            .filter { it.sessionId == sessionId }
+                            .sumOf { segment ->
+                                val end = segment.endWallMs ?: container.wallClock()
+                                if (end <= segment.startWallMs) 0L else (end - segment.startWallMs) / 1000L
+                            }
+                        app.arttodo.system.SessionDeadline.schedule(
+                            container.applicationContext,
+                            sessionId,
+                            target,
+                            elapsed,
+                            container.wallClock(),
+                        )
+                    }
                     runCatching { container.startSessionService(sessionId) }
                         .onFailure { _state.value = _state.value.copy(error = "后台计时服务启动失败；请保持应用打开。") }
                 }
@@ -452,7 +502,10 @@ class AppViewModel(
 
     /** Ends a session, keeping the real invested seconds (never the target). */
     fun finishSession(sessionId: String, onResult: (DomainFailure?) -> Unit = {}) {
-        dispatch(DomainCommands.finishNow(sessionId), onResult)
+        dispatch(DomainCommands.finishNow(sessionId)) { failure ->
+            if (failure == null) app.arttodo.system.SessionDeadline.cancel(container.applicationContext, sessionId)
+            onResult(failure)
+        }
     }
 
     /**
@@ -465,7 +518,10 @@ class AppViewModel(
      * number is what makes "结束本次专注，已投入 …" mean what it says.
      */
     fun finishAt(sessionId: String, seconds: Long, onResult: (DomainFailure?) -> Unit = {}) {
-        dispatch(DomainCommands.finishAfter(sessionId, seconds.coerceAtLeast(0)), onResult)
+        dispatch(DomainCommands.finishAfter(sessionId, seconds.coerceAtLeast(0))) { failure ->
+            if (failure == null) app.arttodo.system.SessionDeadline.cancel(container.applicationContext, sessionId)
+            onResult(failure)
+        }
     }
 
     /**
@@ -475,11 +531,16 @@ class AppViewModel(
      * user's choice because a session that crossed midnight must not silently complete today.
      */
     fun completeWhileRunning(sessionId: String, targetAppDate: String? = null) {
-        dispatch(DomainCommand.CompleteTaskWhileRunning(sessionId = sessionId, targetAppDate = targetAppDate))
+        dispatch(DomainCommand.CompleteTaskWhileRunning(sessionId = sessionId, targetAppDate = targetAppDate)) { failure ->
+            if (failure == null) app.arttodo.system.SessionDeadline.cancel(container.applicationContext, sessionId)
+        }
     }
 
     fun resolveRecovery(sessionId: String, choice: RecoveryChoice, onResult: (DomainFailure?) -> Unit = {}) {
-        dispatch(DomainCommand.ResolveRecovery(sessionId = sessionId, choice = choice), onResult)
+        dispatch(DomainCommand.ResolveRecovery(sessionId = sessionId, choice = choice)) { failure ->
+            if (failure == null) app.arttodo.system.SessionDeadline.cancel(container.applicationContext, sessionId)
+            onResult(failure)
+        }
     }
 
     /**

@@ -11,6 +11,7 @@ use crate::types::{LedgerAuditRow, LedgerRow, LedgerRowTitle, TaskRecord, WorkSe
 pub const KIND_SLICE: i32 = 0;
 pub const KIND_MANUAL_ADD: i32 = 1;
 pub const KIND_SET_TOTAL: i32 = 2;
+pub const KIND_RECOVERY_ADJUSTMENT: i32 = 3;
 
 pub const CHANGE_EDIT: i32 = 0;
 pub const CHANGE_DELETE: i32 = 1;
@@ -32,6 +33,10 @@ fn slice_key(ref_id: &str) -> Option<(&str, u32, i64)> {
         return None;
     }
     Some((session_id, seg_seq, slice_start_wall_ms))
+}
+
+pub fn is_session_slice(ref_id: &str, session_id: &str) -> bool {
+    slice_key(ref_id).is_some_and(|(source_session, _, _)| source_session == session_id)
 }
 
 fn current_title(tasks: &[TaskRecord], task_id: &str) -> String {
@@ -94,8 +99,8 @@ pub fn row_titles(rows: &[LedgerRow], segments: &[WorkSegment], tasks: &[TaskRec
 
 /// Seconds contributed by one row when replaying.
 ///
-/// `kind = 0` (automatic slice) and `kind = 1` (manual add) contribute `delta_seconds`;
-/// `kind = 2` (set-total) contributes an absolute value that replaces the running total.
+/// `kind = 0` (automatic slice), `kind = 1` (manual add), and `kind = 3` (recovery adjustment)
+/// contribute `delta_seconds`; `kind = 2` (set-total) replaces the running total.
 pub fn contribution(row: &LedgerRow) -> i64 {
     row.delta_seconds.unwrap_or(0)
 }
@@ -117,7 +122,7 @@ pub fn replay_total_refs(rows: &[&LedgerRow]) -> i64 {
     let mut total: i64 = 0;
     for row in ordered {
         match row.kind {
-            KIND_SLICE | KIND_MANUAL_ADD => total += contribution(row),
+            KIND_SLICE | KIND_MANUAL_ADD | KIND_RECOVERY_ADJUSTMENT => total += contribution(row),
             KIND_SET_TOTAL => total = row.set_total_seconds.unwrap_or(0),
             _ => {}
         }
@@ -133,7 +138,7 @@ pub fn replay_trace(rows: &[LedgerRow]) -> Vec<i64> {
     let mut trace = Vec::with_capacity(ordered.len());
     for row in ordered {
         match row.kind {
-            KIND_SLICE | KIND_MANUAL_ADD => total += contribution(row),
+            KIND_SLICE | KIND_MANUAL_ADD | KIND_RECOVERY_ADJUSTMENT => total += contribution(row),
             KIND_SET_TOTAL => total = row.set_total_seconds.unwrap_or(0),
             _ => {}
         }
@@ -148,6 +153,11 @@ pub fn validate_edit(
     new_delta_seconds: Option<i64>,
     new_set_total_seconds: Option<i64>,
 ) -> Result<(), DomainError> {
+    if row_kind == KIND_RECOVERY_ADJUSTMENT {
+        return Err(DomainError::LedgerInvariantViolation {
+            detail: "recovery adjustments are immutable".to_string(),
+        });
+    }
     match (new_delta_seconds, new_set_total_seconds) {
         (Some(_), Some(_)) => Err(DomainError::LedgerInvariantViolation {
             detail: "exactly one of new_delta_seconds/new_set_total_seconds must be set".to_string(),
@@ -231,9 +241,18 @@ pub fn restore_audit(audit_seq: i64, row: &LedgerRow, changed_at_ms: i64) -> Led
 /// Total the day would end at if `ledger_seq` were deleted. Drives the `kind = 2` notice
 /// required by 规格 6.1 and 架构契约 §4.3.2 rule 3.
 pub fn total_without(rows: &[LedgerRow], ledger_seq: i64) -> i64 {
+    let row = rows.iter().find(|row| row.ledger_seq == ledger_seq);
+    let deleted_adjustment = row
+        .filter(|row| row.kind == KIND_SLICE)
+        .and_then(|row| row.ref_id.as_deref())
+        .map(|source| format!("recovery:{source}"));
     let filtered: Vec<LedgerRow> = rows
         .iter()
-        .filter(|row| row.ledger_seq != ledger_seq)
+        .filter(|candidate| {
+            candidate.ledger_seq != ledger_seq
+                && !(candidate.kind == KIND_RECOVERY_ADJUSTMENT
+                    && deleted_adjustment.as_deref() == candidate.ref_id.as_deref())
+        })
         .cloned()
         .collect();
     replay_total(&filtered)
@@ -340,9 +359,36 @@ mod tests {
     }
 
     #[test]
+    fn deleting_a_recovery_adjusted_source_preview_removes_its_adjustment() {
+        let mut source = row(1, KIND_SLICE, 1_000, Some(600), None);
+        source.ref_id = Some("sess:x:1:1000:1".to_string());
+        let adjustment = LedgerRow {
+            ledger_seq: 2,
+            kind: KIND_RECOVERY_ADJUSTMENT,
+            ref_id: Some(format!("recovery:{}", source.ref_id.as_deref().unwrap())),
+            task_id: source.task_id.clone(),
+            app_date: source.app_date.clone(),
+            occurred_wall_ms: 2_000,
+            zone_epoch_seq: 1,
+            delta_seconds: Some(-200),
+            set_total_seconds: None,
+            created_wall_ms: 2_000,
+            edited_at_ms: None,
+            is_deleted: false,
+            deleted_at_ms: None,
+        };
+        assert_eq!(replay_total(&[source.clone(), adjustment.clone()]), 400);
+        assert_eq!(total_without(&[source, adjustment], 1), 0);
+    }
+
+    #[test]
     fn edit_validation_matches_kind() {
         assert!(validate_edit(KIND_MANUAL_ADD, Some(60), None).is_ok());
         assert!(validate_edit(KIND_SET_TOTAL, None, Some(60)).is_ok());
+        assert!(matches!(
+            validate_edit(KIND_RECOVERY_ADJUSTMENT, Some(-60), None),
+            Err(DomainError::LedgerInvariantViolation { .. })
+        ));
         assert!(matches!(
             validate_edit(KIND_MANUAL_ADD, None, Some(60)),
             Err(DomainError::LedgerInvariantViolation { .. })

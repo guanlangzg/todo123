@@ -12,6 +12,37 @@ class SessionOwnerTest {
     }
 
     @Test
+    fun a_stale_deadline_cannot_replace_the_current_owner() {
+        val owner = SessionOwner()
+        owner.claim("session:new")
+        val claimed = owner.claimIfActive("session:old", activeSessionId = "session:new")
+
+        assertThat(claimed).isEqualTo(false)
+        assertThat(owner.sessionId()).isEqualTo("session:new")
+    }
+
+    @Test
+    fun a_stale_active_snapshot_cannot_replace_a_newer_owner() {
+        val owner = SessionOwner()
+        owner.claim("session:new")
+
+        val claimed = owner.claimIfActive("session:old", activeSessionId = "session:old")
+
+        assertThat(claimed).isEqualTo(false)
+        assertThat(owner.sessionId()).isEqualTo("session:new")
+    }
+
+    @Test
+    fun a_matching_active_session_can_be_claimed() {
+        val owner = SessionOwner()
+
+        val claimed = owner.claimIfActive("session:active", activeSessionId = "session:active")
+
+        assertThat(claimed).isEqualTo(true)
+        assertThat(owner.owns("session:active")).isTrue()
+    }
+
+    @Test
     fun release_only_clears_the_matching_session() {
         val owner = SessionOwner()
         owner.claim("session:1")

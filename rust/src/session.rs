@@ -112,7 +112,7 @@ pub fn recovery_amounts(
         RecoveryChoice::Accept => {
             let mut total = trusted + gap;
             if let Some(target) = target_seconds {
-                // A countdown can never book more than it was asked to run.
+                // A countdown caps the whole session; the caller subtracts earlier closed segments.
                 total = total.min(target);
             }
             total

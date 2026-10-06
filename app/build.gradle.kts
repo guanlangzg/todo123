@@ -38,7 +38,12 @@ val generateUniffiBindings by tasks.registering(Exec::class) {
     val outDir = layout.buildDirectory.dir("generated/uniffi").get().asFile.absolutePath
     // The binding is generated from the *host* cdylib: no NDK needed, and reproducible.
     inputs.dir(rustRoot.dir("src"))
-    inputs.file(rustRoot.file("Cargo.toml"))
+    inputs.files(
+        rustRoot.file("Cargo.toml"),
+        rustRoot.file("Cargo.lock"),
+        rustRoot.file("rust-toolchain.toml"),
+        rustRoot.file("uniffi.toml"),
+    )
     outputs.dir(outDir)
     if (OperatingSystem.current().isWindows) {
         commandLine(
@@ -64,7 +69,11 @@ val cargoNdkBuild by tasks.registering {
     group = "rust"
     description = "Cross-compiles libarttodo_core.so for every declared ABI into generated/jniLibs."
     inputs.dir(rustRoot.dir("src"))
-    inputs.file(rustRoot.file("Cargo.toml"))
+    inputs.files(
+        rustRoot.file("Cargo.toml"),
+        rustRoot.file("Cargo.lock"),
+        rustRoot.file("rust-toolchain.toml"),
+    )
     val jniRoot = layout.buildDirectory.dir("generated/jniLibs").get().asFile
     outputs.dir(jniRoot)
     // Fail loudly instead of silently shipping an APK without the domain core.
